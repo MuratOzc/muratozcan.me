@@ -19,7 +19,7 @@ import {
   type Poi,
 } from './world/placement';
 import { ProximityPanel } from './world/panel';
-import { buildSkeleton } from './world/skeleton';
+import { buildFigure, buildSkeleton } from './world/skeleton';
 import { makeTextTexture } from './world/text';
 
 /**
@@ -94,6 +94,7 @@ for (const [bearing, distance] of GROUND_FACES) {
 // comes later.
 const panel = new ProximityPanel();
 const skeleton = buildSkeleton(world);
+buildFigure(world).catch((e) => console.error('figure failed to load:', e));
 const pois: Poi[] = skeleton.pois;
 
 /**

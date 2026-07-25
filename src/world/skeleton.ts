@@ -1,7 +1,8 @@
 import { BoxGeometry, PlaneGeometry } from 'three';
 import { HyperObject, type HyperWorld } from '../engine';
 import { pathYaw, placeAlongPath, units, type Poi } from './placement';
-import { makeTextTexture } from './text';
+import { makeArrowTexture, makeTextTexture } from './text';
+import { loadModel, spawnModel } from './model';
 
 /**
  * The skeleton of the world.
@@ -25,7 +26,7 @@ import { makeTextTexture } from './text';
 /** Distance ahead of spawn where the arch stands, in units. */
 export const ARCH_AT = 5.0;
 /** How far behind spawn the model stands, in units. */
-export const MODEL_AT = 2.6;
+export const MODEL_AT = 8.0;
 /** Total aisle length: once around. */
 export const AISLE_LENGTH = 2 * Math.PI;
 
@@ -59,10 +60,21 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
   const slab = slabGeometry();
   const STEP = 1.1;
   const total = 2 * Math.PI;
+
+  // Direction markers. Painted on the path rather than signposted, so they
+  // guide without cluttering the skyline — and because a chevron stays
+  // readable when foreshortened to almost nothing down a curving path.
+  const arrowTex = makeArrowTexture('#63705a');
+  const arrowGeo = new PlaneGeometry(0.8, 0.8, 3, 3);
+  arrowGeo.rotateX(-Math.PI / 2);
+  arrowGeo.translate(0, 0.045, 0);
+
+  let step = 0;
   for (let a = 0; a < total; a += units(STEP)) {
     if (Math.abs(a - Math.PI) < 0.05) continue;
+    const yaw = pathYaw(a, 0);
     const o = new HyperObject(placeAlongPath(a, 0));
-    o.rotation.y = pathYaw(a, 0);
+    o.rotation.y = yaw;
     o.addGeometry(world.shared, slab, {
       color: 0xb9ae94,
       ambient: 0.66,
@@ -70,6 +82,19 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
       mottleAmount: 0.22,
     });
     add(o);
+
+    if (step % 4 === 2) {
+      const arrow = new HyperObject(placeAlongPath(a, 0));
+      arrow.rotation.y = yaw;
+      arrow.addGeometry(world.shared, arrowGeo, {
+        map: arrowTex,
+        color: 0xffffff,
+        ambient: 0.9,
+        alphaTest: 0.3,
+      });
+      add(arrow);
+    }
+    step++;
   }
 
   // -------------------------------------------------------------- the arch
@@ -107,37 +132,43 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
     radius: units(4),
   });
 
-  // -------------------------------------------------------------- the model
-  // Placeholder standing in for the real scan. Behind spawn, so you begin with
-  // your back to it.
+  // -------------------------------------------------------------- the plinth
+  // The figure itself loads asynchronously; the plinth is here so the spot
+  // reads as occupied from the first frame.
   const modelAt = -units(MODEL_AT);
-  const model = new HyperObject(placeAlongPath(modelAt, 0));
-  model.rotation.y = pathYaw(modelAt, 0) + Math.PI;
-
-  const PLINTH_H = 0.14;
-  const BODY_H = 0.85;
-  const HEAD_H = 0.3;
-
-  const plinth = new BoxGeometry(1.1, PLINTH_H, 1.1, 2, 1, 2);
-  plinth.translate(0, PLINTH_H / 2, 0);
-  model.addGeometry(world.shared, plinth, { color: 0x8d8778, ambient: 0.6 });
-
-  const body = new BoxGeometry(0.42, BODY_H, 0.26, 3, 8, 2);
-  body.translate(0, PLINTH_H + BODY_H / 2, 0);
-  model.addGeometry(world.shared, body, { color: 0x4a5b7a, ambient: 0.5 });
-
-  const head = new BoxGeometry(0.28, HEAD_H, 0.26, 2, 3, 2);
-  head.translate(0, PLINTH_H + BODY_H + HEAD_H / 2, 0);
-  model.addGeometry(world.shared, head, { color: 0xc99b7a, ambient: 0.52 });
-  add(model);
+  const plinthObj = new HyperObject(placeAlongPath(modelAt, 0));
+  plinthObj.rotation.y = pathYaw(modelAt, 0);
+  const plinth = new BoxGeometry(3.6, 0.45, 3.6, 4, 1, 4);
+  plinth.translate(0, 0.225, 0);
+  plinthObj.addGeometry(world.shared, plinth, { color: 0x8d8778, ambient: 0.6 });
+  add(plinthObj);
 
   pois.push({
     id: 'me',
     title: 'Murat Özcan',
-    body: 'Placeholder. The real model goes here.',
+    body: 'Stand-in figure. The real scan goes here.',
     gv: placeAlongPath(modelAt, 0),
-    radius: units(3.5),
+    radius: units(6),
   });
 
   return { pois, objects };
+}
+
+/**
+ * The figure on the plinth.
+ *
+ * Separate and async because it fetches a model. Deliberately oversized —
+ * roughly four times a person — so that when you are halfway round the world
+ * and it sits exactly antipodal, it reads as a presence filling the sky rather
+ * than a speck.
+ */
+export async function buildFigure(world: HyperWorld): Promise<HyperObject> {
+  const model = await loadModel('/models/figure.glb');
+  const modelAt = -units(MODEL_AT);
+  return spawnModel(world, placeAlongPath(modelAt, 0), model, {
+    height: 5.0,
+    // Face back down the path, toward the arch and the walk ahead.
+    yaw: pathYaw(modelAt, 0) + Math.PI,
+    ambient: 0.58,
+  });
 }
