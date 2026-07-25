@@ -8,6 +8,7 @@ import {
   formatSelfTests,
   runSelfTests,
 } from './engine';
+import { ANTIPODE, buildAntipode, buildStack } from './world/layout';
 
 /**
  * Demo world exercising the engine.
@@ -81,45 +82,26 @@ for (const f of faces) {
   world.add(tile);
 }
 
-// ------------------------------------------------- markers at known distances
-// Walking toward these shows the signature spherical behaviour: they shrink
-// until a quarter turn away, then grow again as you keep going.
-const markerGeo = new BoxGeometry(0.018, 0.11, 0.018, 3, 10, 3);
-markerGeo.translate(0, 0.055, 0);
-
-const MARKERS = [0.3, 0.6, 1.0, 1.4, QUARTER, 2.0, 2.4, 2.8];
-for (let i = 0; i < MARKERS.length; i++) {
-  const d = MARKERS[i];
-  const obj = new HyperObject(GyroVector.fromGeodesic(new Vector3(0, 0, -1), d));
-  obj.addGeometry(world.shared, markerGeo, {
-    color: i % 2 === 0 ? 0xe8e2d4 : 0xc0392b,
-    ambient: 0.5,
-  });
-  world.add(obj);
-}
-
-// ------------------------------------------------------ the antipode landmark
-// Whatever sits here is visible from everywhere in the world, smeared across
-// the whole sky. In the real site this is the slot for the hero element.
-const landmarkGeo = new BoxGeometry(0.05, 0.34, 0.05, 5, 26, 5);
-landmarkGeo.translate(0, 0.17, 0);
-const landmark = new HyperObject(
-  GyroVector.fromGeodesic(new Vector3(0, 0, -1), HALF_TURN - 0.12),
-);
-landmark.addGeometry(world.shared, landmarkGeo, { color: 0x2f4f8f, ambient: 0.45 });
-world.add(landmark);
+// --------------------------------------------------------------- the stack
+// Every layer of the technology, laid out as a descent along one geodesic.
+// Walk forward from spawn and you go down the stack; the antipode holds the
+// person all of it terminates at.
+const stack = buildStack(world);
+buildAntipode(world);
 
 // ------------------------------------------------------------ scattered props
-const propGeo = new BoxGeometry(0.035, 0.035, 0.035, 3, 3, 3);
-propGeo.translate(0, 0.0175, 0);
-for (let i = 0; i < 40; i++) {
-  const ang = (i / 40) * Math.PI * 2 * 3.7;
-  const dist = 0.25 + (i / 40) * 2.6;
+// Ground detail. Without something small and irregular nearby there is no cue
+// for speed or scale while walking.
+const propGeo = new BoxGeometry(0.022, 0.022, 0.022, 2, 2, 2);
+propGeo.translate(0, 0.011, 0);
+for (let i = 0; i < 60; i++) {
+  const ang = (i / 60) * Math.PI * 2 * 5.3;
+  const dist = 0.2 + (i / 60) * 2.9;
   const dir = new Vector3(Math.cos(ang), 0, Math.sin(ang));
   const obj = new HyperObject(GyroVector.fromGeodesic(dir, dist));
   obj.addGeometry(world.shared, propGeo, {
-    color: [0xd98c5f, 0x7a9e7e, 0xcfc09a, 0x9b6b9e][i % 4],
-    ambient: 0.5,
+    color: [0x9aa878, 0x8b9c6e, 0xa8b184, 0x7f8f66][i % 4],
+    ambient: 0.55,
   });
   world.add(obj);
 }
@@ -195,6 +177,20 @@ function frame(now: number) {
 
   const gv = world.worldGV;
   const travelled = world.distanceFromOrigin();
+
+  // Which layer of the stack are you standing in? Geodesic distance to each
+  // domain, cheapest possible: compose and read the Poincare radius.
+  let nearest: string = ANTIPODE.title;
+  let nearestBlurb: string = ANTIPODE.blurb;
+  let nearestDist = Infinity;
+  for (const p of stack) {
+    const d = 2 * Math.atan(p.object.localGV.add(gv).vec.length());
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = p.domain.title;
+      nearestBlurb = p.domain.blurb;
+    }
+  }
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
     `<b>world</b>     circumference 2π = ${(2 * Math.PI).toFixed(4)} rad\n` +
@@ -205,6 +201,8 @@ function frame(now: number) {
     `<b>poincare</b>  |p| = ${gv.vec.length().toFixed(4)}\n` +
     `<b>height</b>    ${controls.height.toFixed(4)} rad  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
+    `\n<b>nearest</b>   ${nearest}  (${nearestDist.toFixed(2)} rad)\n` +
+    `          ${nearestBlurb}\n` +
     `<b>holonomy</b>  ${gv.gyr.w.toFixed(6)} (w component)\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
