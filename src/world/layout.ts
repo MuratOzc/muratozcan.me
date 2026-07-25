@@ -53,6 +53,51 @@ export function ringBearing(i: number, n: number): number {
 }
 
 /**
+ * Place something beside the path.
+ *
+ * `along` is arc length travelled down the path from spawn; `lateral` is
+ * perpendicular offset, positive to the right. The result sits at EXACTLY
+ * `lateral` from the path for any `along` — the flanking rows stay genuinely
+ * parallel the whole way.
+ *
+ * That is worth stating carefully, because a related claim is false. No two
+ * geodesics stay parallel in spherical space; any two great circles meet
+ * twice. But the set of points at constant distance from a great circle is a
+ * small circle, and small circles ARE parallel to it everywhere. A flanking
+ * row follows one of those. It simply is not a geodesic itself — walk along
+ * it in a straight line and you drift off it.
+ *
+ * The conversion is spherical Pythagoras on the right triangle spawn-foot-point:
+ *
+ *   cos(r) = cos(along) * cos(lateral)
+ *   tan(bearing) = tan(lateral) / sin(along)
+ */
+export function placeAlongPath(along: number, lateral: number): GyroVector {
+  const r = Math.acos(
+    Math.max(-1, Math.min(1, Math.cos(along) * Math.cos(lateral))),
+  );
+  const bearing = Math.atan2(Math.tan(lateral), Math.sin(along));
+  return placeOnGround(bearing, r);
+}
+
+/**
+ * Yaw needed to make an object face along the path.
+ *
+ * A GyroVector built by translation carries a parallel-transported frame, so
+ * an object placed off to the side of the path does NOT already point along
+ * it — the frame arrived there along a different bearing. Rather than derive
+ * the correction from spherical trigonometry, measure it: take a point a hair
+ * further down the path, pull it into the object's local frame, and read off
+ * the heading.
+ */
+export function pathYaw(along: number, lateral: number, eps = 1e-3): number {
+  const here = placeAlongPath(along, lateral);
+  const ahead = placeAlongPath(along + eps, lateral);
+  const local = here.inverse().transformPoint(ahead.point());
+  return Math.atan2(-local.x, -local.z);
+}
+
+/**
  * The antipode sits a hair short of PI, because the Poincare radius is
  * infinite exactly there. The far-hemisphere pass maps it back to a sane
  * magnitude.

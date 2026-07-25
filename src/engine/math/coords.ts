@@ -1,5 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import { HM, atanK, tanK } from './curvature';
+import { mobiusDistSq } from './mobius';
 
 /**
  * Coordinate systems, ported from HyperEngine (see HyperEngine.pdf, "Coordinate
@@ -127,6 +128,16 @@ export function hyperTranslate(d: Vector3, out = new Vector3()): Vector3 {
 /** Geodesic distance from the origin to a Poincare point. */
 export function geodesicRadius(p: Vector3): number {
   return 2 * atanK(p.length());
+}
+
+/**
+ * Geodesic distance between two Poincare points.
+ *
+ * mobiusDistSq gives |a (+) -b|^2, and a Poincare radius r corresponds to a
+ * geodesic distance 2*atanK(r), so this is just the composition of the two.
+ */
+export function geodesicDistance(a: Vector3, b: Vector3): number {
+  return 2 * atanK(Math.sqrt(Math.max(0, mobiusDistSq(a, b))));
 }
 
 /**

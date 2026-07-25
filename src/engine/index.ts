@@ -24,6 +24,7 @@ export {
   geodesicTranslate,
   hyperTranslate,
   geodesicRadius,
+  geodesicDistance,
   heightAboveGround,
   fromToRotation,
   swingTwist,

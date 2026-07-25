@@ -2,6 +2,7 @@ import { Quaternion, Vector3 } from 'three';
 import { HM, atanK, setGeometry, tanK, type Curvature } from './curvature';
 import {
   geodesicTranslate,
+  geodesicDistance,
   kleinToPoincare,
   poincareToKlein,
   unitToPoincare,
@@ -284,6 +285,45 @@ export function runSelfTests(): TestResult[] {
       name: 'geodesics render as straight screen lines',
       pass: worst < 1e-12,
       detail: `max out-of-plane ${worst.toExponential(2)} — so tessellation does not change silhouette`,
+    });
+  }
+
+  // --- Flanking rows stay parallel to a path ----------------------------
+  // No two geodesics stay parallel in spherical space — any two great circles
+  // meet twice. But the set of points at constant distance from a great
+  // circle is a small circle, and that IS parallel to it everywhere. A row of
+  // objects lining a path follows one of those.
+  //
+  // Placement uses spherical Pythagoras on the triangle spawn-foot-point:
+  //   cos(r) = cos(along) * cos(lateral),  tan(bearing) = tan(lateral)/sin(along)
+  // This checks the perpendicular distance really is constant, including past
+  // the quarter turn where the naive construction flips sign.
+  {
+    setGeometry(1, 1);
+    const place = (bearing: number, dist: number) =>
+      GyroVector.fromGeodesic(
+        new Vector3(Math.sin(bearing), 0, -Math.cos(bearing)),
+        dist,
+      ).vec;
+    // The path runs along bearing 0; its pole on the ground sits a quarter
+    // turn away at bearing PI/2. Distance to the path is |PI/2 - d(P, pole)|.
+    const pole = place(Math.PI / 2, Math.PI / 2);
+    const lateral = 0.13;
+    let worst = 0;
+    for (let i = 1; i <= 40; i++) {
+      const along = (i / 41) * Math.PI * 2;
+      const r = Math.acos(
+        Math.max(-1, Math.min(1, Math.cos(along) * Math.cos(lateral))),
+      );
+      const bearing = Math.atan2(Math.tan(lateral), Math.sin(along));
+      const p = place(bearing, r);
+      const measured = Math.abs(Math.PI / 2 - geodesicDistance(p, pole));
+      worst = Math.max(worst, Math.abs(measured - lateral));
+    }
+    results.push({
+      name: 'flanking rows hold constant distance from the path',
+      pass: worst < 1e-9,
+      detail: `max deviation ${worst.toExponential(2)} over a full lap at lateral ${lateral}`,
     });
   }
 
