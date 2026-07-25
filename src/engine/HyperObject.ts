@@ -61,9 +61,15 @@ export class HyperObject extends Group {
   updateHyper(worldGV: GyroVector): void {
     const composed = this.localGV.add(worldGV);
     const rot = composed.toMatrix3();
+    // The static placement goes up too, so the shader has a world coordinate
+    // that does not slide around when the viewer moves. Surface texturing needs
+    // to be anchored to the world, not to the observer.
+    const staticRot = this.localGV.toMatrix3();
     for (const mat of this.materials) {
       mat.uniforms.uHyperPos.value.copy(composed.vec);
       mat.uniforms.uHyperRot.value.copy(rot);
+      mat.uniforms.uStaticPos.value.copy(this.localGV.vec);
+      mat.uniforms.uStaticRot.value.copy(staticRot);
     }
   }
 

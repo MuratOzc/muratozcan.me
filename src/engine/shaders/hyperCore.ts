@@ -38,11 +38,14 @@ float tan_k(float x) {
 export const HYPER_VERTEX = /* glsl */ `
 uniform vec3 uHyperPos;
 uniform mat3 uHyperRot;
+uniform vec3 uStaticPos;
+uniform mat3 uStaticRot;
 
 out vec3 vNormal;
 out vec2 vUv;
 out float vWDot;
 out vec3 vLocalPos;
+out vec4 vSphere;
 
 vec3 qtransform(vec4 q, vec3 v) {
   vec3 t = cross(q.xyz, v);
@@ -76,6 +79,23 @@ void main() {
   // Klein -> Poincare. Written as K*(K + dot) rather than 1 + K*dot so that
   // K = 0 falls out as an exact identity with no branch.
   p /= sqrt(uK * (uK + dot(p, p))) + 1.0;
+
+  // A world coordinate that does not move when the viewer does.
+  //
+  // uStaticPos/uStaticRot are the object's own placement WITHOUT the camera
+  // composed in, so this is fixed to the world rather than to the observer.
+  // Lifting it back onto the unit 3-sphere (the inverse stereographic map)
+  // gives a bounded, continuous coordinate that stays well behaved all the way
+  // to the antipode — where Poincare coordinates run to infinity.
+  //
+  // This is what makes seamless surface texturing possible. Anything derived
+  // from tile-local coordinates breaks at tile boundaries; anything derived
+  // from this does not, because neighbouring tiles agree here by construction.
+  vec3 dummyN = vec3(0.0, 1.0, 0.0);
+  vec3 ps = mobius_add(p, uStaticPos, dummyN);
+  ps = uStaticRot * ps;
+  float rs = dot(ps, ps);
+  vSphere = vec4(2.0 * ps, 1.0 - rs) / (1.0 + rs);
 
   // Place into curved space: object transform composed with the camera
   // transform, both baked into uHyperPos / uHyperRot on the CPU.
@@ -112,13 +132,37 @@ uniform float uFogInvDist;
 uniform float uGridScale;
 uniform float uGridWidth;
 uniform float uGridFade;
+uniform float uMottleScale;
+uniform float uMottleAmount;
 
 in vec3 vNormal;
 in vec2 vUv;
 in float vWDot;
 in vec3 vLocalPos;
+in vec4 vSphere;
 
 layout(location = 0) out vec4 fragColor;
+
+float hash31(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float vnoise(vec3 x) {
+  vec3 i = floor(x);
+  vec3 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(hash31(i + vec3(0,0,0)), hash31(i + vec3(1,0,0)), f.x),
+        mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
+    mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+        mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+
+float fbm(vec3 p) {
+  return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.17) + 0.2 * vnoise(p * 4.61);
+}
 
 void main() {
   // w_dot is strictly positive, but MSAA can extrapolate it negative at edges,
@@ -163,6 +207,16 @@ void main() {
     vec2 line = smoothstep(vec2(0.0), w, g);
     float fade = 1.0 / (1.0 + w_dot * uGridFade);
     col *= mix(1.0, 0.55 + 0.45 * min(line.x, line.y), fade);
+  }
+
+  // Seamless surface mottling. Driven by the 3-sphere coordinate, so it is
+  // continuous across tile boundaries — no grid direction to kink, nothing to
+  // reveal where one tile ends and the next begins.
+  if (uMottleAmount > 0.0) {
+    vec3 sp = vec3(vSphere.x, vSphere.z, vSphere.w);
+    float m = fbm(sp * uMottleScale);
+    float coarse = fbm(sp * (uMottleScale * 0.17));
+    col *= 1.0 + uMottleAmount * ((m - 0.5) + 0.8 * (coarse - 0.5));
   }
 
   col = mix(col, uFog.rgb, fog_a);

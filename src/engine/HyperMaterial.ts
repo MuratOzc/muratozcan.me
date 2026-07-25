@@ -42,6 +42,8 @@ export interface HyperMaterialOptions {
   gridScale?: number;
   gridWidth?: number;
   gridFade?: number;
+  mottleScale?: number;
+  mottleAmount?: number;
   side?: Side;
 }
 
@@ -71,6 +73,10 @@ function build(
       uGridScale: { value: opts.gridScale ?? 0 },
       uGridWidth: { value: opts.gridWidth ?? 1.5 },
       uGridFade: { value: opts.gridFade ?? 4.0 },
+      uMottleScale: { value: opts.mottleScale ?? 40.0 },
+      uMottleAmount: { value: opts.mottleAmount ?? 0.0 },
+      uStaticPos: { value: new Vector3() },
+      uStaticRot: { value: new Matrix3() },
     },
     vertexShader: HYPER_COMMON + HYPER_VERTEX,
     fragmentShader: HYPER_COMMON + HYPER_FRAGMENT,

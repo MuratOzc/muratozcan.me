@@ -48,28 +48,32 @@ groundGeo.rotateX(-Math.PI / 2);
 interface Face {
   dir: Vector3;
   dist: number;
-  color: number;
 }
 
+// The six faces of a cube inflated onto the 3-sphere. They all lie on the SAME
+// great 2-sphere, so the surface is genuinely seamless — give them different
+// colours or a tile-local grid, though, and the cube becomes obvious. Uniform
+// colour plus world-anchored mottling keeps the tiling invisible.
 const faces: Face[] = [
-  { dir: new Vector3(0, 0, 0), dist: 0, color: 0x8fbf6a },
-  { dir: new Vector3(1, 0, 0), dist: QUARTER, color: 0x86b765 },
-  { dir: new Vector3(-1, 0, 0), dist: QUARTER, color: 0x96c471 },
-  { dir: new Vector3(0, 0, 1), dist: QUARTER, color: 0x8ec06e },
-  { dir: new Vector3(0, 0, -1), dist: QUARTER, color: 0x82b361 },
+  { dir: new Vector3(0, 0, 0), dist: 0 },
+  { dir: new Vector3(1, 0, 0), dist: QUARTER },
+  { dir: new Vector3(-1, 0, 0), dist: QUARTER },
+  { dir: new Vector3(0, 0, 1), dist: QUARTER },
+  { dir: new Vector3(0, 0, -1), dist: QUARTER },
   // The sixth face sits at the antipode, where the Poincare radius is
   // infinite. Nudging it a hair short keeps it finite; the far-hemisphere
   // inversion in the shader maps it back to a sane magnitude.
-  { dir: new Vector3(1, 0, 0), dist: HALF_TURN - 1e-3, color: 0x79ab5c },
+  { dir: new Vector3(1, 0, 0), dist: HALF_TURN - 1e-3 },
 ];
 
 for (const f of faces) {
   const gv = f.dist === 0 ? new GyroVector() : GyroVector.fromGeodesic(f.dir, f.dist);
   const tile = new HyperObject(gv);
   tile.addGeometry(world.shared, groundGeo, {
-    color: f.color,
+    color: 0x8ab967,
     ambient: 0.62,
-    gridScale: 26,
+    mottleScale: 34,
+    mottleAmount: 0.3,
   });
   world.add(tile);
 }
