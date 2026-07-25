@@ -39,7 +39,10 @@ const QUARTER = Math.PI / 2;
 // radian of geodesic distance, and the whole universe is only 2*PI around. So
 // a person is EYE_HEIGHT tall and everything else is sized against that. Get
 // this wrong and objects are literally continent-sized.
-const EYE_HEIGHT = 0.06;
+// 0.1 is CodeParade's value for Hyperbolica. It makes the world about 63 eye
+// heights around, which is what gives it the feel of a small planet rather
+// than a room or a continent.
+const EYE_HEIGHT = 0.1;
 
 // -------------------------------------------------------------- ground
 const groundGeo = new PlaneGeometry(2, 2, 96, 96);
@@ -122,10 +125,13 @@ for (let i = 0; i < 40; i++) {
 }
 
 // ------------------------------------------------------------------ controls
-const controls = new Controls(world, canvas, { speed: 0.28, levelHorizon: true });
-
-// Stand on the ground rather than in it.
-world.worldGV = new GyroVector(new Vector3(0, -Math.tan(EYE_HEIGHT / 2), 0));
+const controls = new Controls(world, canvas, {
+  eyeHeight: EYE_HEIGHT,
+  // Multiples of eye height per second — HyperEngine's convention, and
+  // CodeParade's number. A full lap takes about 28 seconds.
+  speed: 2.25,
+});
+controls.reset();
 
 addEventListener('resize', () => world.resize());
 
@@ -164,9 +170,13 @@ function frame(now: number) {
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
     `<b>world</b>     circumference 2π = ${(2 * Math.PI).toFixed(4)} rad\n` +
-    `<b>position</b>  ${travelled.toFixed(4)} rad from spawn\n` +
-    `<b>          </b>${((travelled / (2 * Math.PI)) * 100).toFixed(1)}% of the way around\n` +
+    // Straight-line distance from spawn peaks at PI, at the antipode, and then
+    // counts back down. It is not an odometer — distanceWalked is.
+    `<b>from spawn</b> ${travelled.toFixed(3)} rad  (max ${Math.PI.toFixed(3)} at the antipode)\n` +
+    `<b>walked</b>    ${controls.distanceWalked.toFixed(2)} rad  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
     `<b>poincare</b>  |p| = ${gv.vec.length().toFixed(4)}\n` +
+    `<b>height</b>    ${controls.height.toFixed(4)} rad  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
+    `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
     `<b>holonomy</b>  ${gv.gyr.w.toFixed(6)} (w component)\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 

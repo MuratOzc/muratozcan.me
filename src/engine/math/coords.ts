@@ -130,6 +130,23 @@ export function geodesicRadius(p: Vector3): number {
 }
 
 /**
+ * Height of a Poincare point above the ground — the totally geodesic surface
+ * y = 0, which in spherical space is a great 2-sphere.
+ *
+ * This is NOT `2*atan(p.y)`. That only works directly above the origin. The
+ * honest version comes from the inverse stereographic lift: a Poincare point
+ * maps to the unit 3-sphere point (2p, 1 - |p|^2) / (1 + |p|^2), and the
+ * distance from there to the great sphere {y = 0} is asin of its y component.
+ */
+export function heightAboveGround(p: Vector3): number {
+  if (HM.K === 0) return p.y;
+  const d = 1 + HM.K * p.lengthSq();
+  if (Math.abs(d) < 1e-12) return 0;
+  const s = (2 * p.y) / d;
+  return HM.K > 0 ? Math.asin(Math.max(-1, Math.min(1, s))) : Math.asinh(s);
+}
+
+/**
  * Unity's Quaternion.FromToRotation. Three's setFromUnitVectors handles the
  * degenerate case differently, so this is ported directly to keep
  * alignUpVector behaving identically to the reference.
