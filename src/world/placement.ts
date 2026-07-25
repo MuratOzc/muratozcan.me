@@ -1,5 +1,31 @@
 import { Vector3 } from 'three';
-import { GyroVector } from '../engine';
+import { GyroVector, HM } from '../engine';
+
+/**
+ * Authoring units.
+ *
+ * Geometry is authored in Unit coordinates and the engine works in radians of
+ * geodesic distance. `unitScale` bridges them: at unitScale = 0.1 a person is
+ * 1 unit tall and the world is 2*PI / 0.1 = 62.8 units around, which is a
+ * comfortable range to model in and matches how downloaded assets are scaled.
+ *
+ * Heights convert exactly. With tanKHeight on, an authored height h becomes
+ * atan(tan(h * unitScale)) = h * unitScale radians — the two operations
+ * cancel. Horizontal extents go through the Klein (gnomonic) map instead, so
+ * an authored width w spans atan(w * unitScale) radians. That is linear for
+ * small objects and stretches for large ones; it is why the ground tiles have
+ * to reach 10 units to cover a 45 degree cube face.
+ */
+
+/** Authored units -> radians of geodesic distance. Use for placement. */
+export function units(n: number): number {
+  return n * HM.unitScale;
+}
+
+/** Radians -> authored units. */
+export function toUnits(radians: number): number {
+  return radians / HM.unitScale;
+}
 
 /**
  * Placement primitives.

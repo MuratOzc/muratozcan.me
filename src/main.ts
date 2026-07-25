@@ -14,6 +14,8 @@ import {
   placeAlongPath,
   placeOnGround,
   pathYaw,
+  units,
+  toUnits,
   type Poi,
 } from './world/placement';
 import { ProximityPanel } from './world/panel';
@@ -23,14 +25,17 @@ import { ProximityPanel } from './world/panel';
  *
  * Ground, sky, a viewer who can walk. Nothing placed on it yet.
  *
- * Scale discipline, because it is the easiest thing to get wrong here: with
- * unitScale = 1, one authored unit IS one radian of geodesic distance, and the
- * whole universe is only 2*PI around. A person is EYE_HEIGHT tall and
- * everything else is sized against that. The world is roughly 63 eye-heights
- * around and takes ~28 seconds to lap.
+ * Scale: unitScale = 0.1, so you author at human scale. A person is 1 unit
+ * tall and the world is 62.8 units around — a ~28 second lap. Everything the
+ * engine does internally is still in radians; `units()` converts at the
+ * authoring boundary.
  */
 
-const EYE_HEIGHT = 0.1;
+const UNIT_SCALE = 0.1;
+/** A person, in authored units. */
+const EYE_UNITS = 1;
+/** ...and in radians, which is what the engine wants. */
+const EYE_HEIGHT = EYE_UNITS * UNIT_SCALE;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
@@ -39,7 +44,7 @@ const tests = document.getElementById('tests') as HTMLDivElement;
 const world = new HyperWorld({
   canvas,
   curvature: 1,
-  unitScale: 1,
+  unitScale: UNIT_SCALE,
   background: 0xaebfd0,
   fogColor: [0.70, 0.78, 0.88],
   fogDensity: 0.9,
@@ -52,7 +57,11 @@ world.setLightDirection(new Vector3(0.35, 0.9, 0.25));
 // way to tile a sphere with squares. All six lie on the SAME great 2-sphere,
 // so the surface is seamless; give them different colours or a tile-local
 // grid and the cube becomes visible, which is why neither is used here.
-const groundGeo = new PlaneGeometry(2, 2, 96, 96);
+//
+// Each face must reach Klein 1.0 to cover its 45 degrees, which at
+// unitScale 0.1 means 10 authored units from the centre.
+const FACE_REACH = 1 / UNIT_SCALE;
+const groundGeo = new PlaneGeometry(FACE_REACH * 2, FACE_REACH * 2, 96, 96);
 groundGeo.rotateX(-Math.PI / 2);
 
 const QUARTER = Math.PI / 2;
@@ -133,6 +142,8 @@ addEventListener('resize', () => world.resize());
   placeOnGround,
   placeAlongPath,
   pathYaw,
+  units,
+  toUnits,
   ANTIPODE_DISTANCE,
   /** Quick test box: size, tessellation, placement. */
   box(opts: {
@@ -141,13 +152,15 @@ addEventListener('resize', () => world.resize());
     bearing?: number; distance?: number;
     color?: number; tanK?: boolean;
   } = {}) {
-    const w = opts.w ?? 0.1, h = opts.h ?? 0.2, dd = opts.d ?? 0.1;
+    const w = opts.w ?? 1, h = opts.h ?? 2, dd = opts.d ?? 1;
     const seg = opts.seg ?? 4;
     const g = new BoxGeometry(w, h, dd, seg, seg, seg);
     g.translate(0, h / 2, 0);
+    // Distances are given in authored units and converted here, so the whole
+    // console API speaks one scale.
     const at = opts.along !== undefined
-      ? placeAlongPath(opts.along, opts.lateral ?? 0)
-      : placeOnGround(opts.bearing ?? 0, opts.distance ?? 0.6);
+      ? placeAlongPath(units(opts.along), units(opts.lateral ?? 0))
+      : placeOnGround(opts.bearing ?? 0, units(opts.distance ?? 6));
     const object = new HyperObject(at, opts.tanK ?? true);
     object.addGeometry(world.shared, g, { color: opts.color ?? 0xdd5522, ambient: 0.5 });
     world.add(object);
@@ -185,12 +198,12 @@ function frame(now: number) {
 
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
-    `<b>world</b>     2π = ${(2 * Math.PI).toFixed(3)} rad around, empty\n` +
+    `<b>world</b>     ${toUnits(2 * Math.PI).toFixed(1)} units around, empty\n` +
     // Straight-line distance from spawn peaks at PI at the antipode and then
     // counts back down. It is not an odometer — distanceWalked is.
-    `<b>from spawn</b> ${world.distanceFromOrigin().toFixed(3)} rad  (max ${Math.PI.toFixed(3)})\n` +
-    `<b>walked</b>    ${controls.distanceWalked.toFixed(2)} rad  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
-    `<b>height</b>    ${controls.height.toFixed(4)} rad  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
+    `<b>from spawn</b> ${toUnits(world.distanceFromOrigin()).toFixed(2)} u  (max ${toUnits(Math.PI).toFixed(1)} at the antipode)\n` +
+    `<b>walked</b>    ${toUnits(controls.distanceWalked).toFixed(1)} u  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
+    `<b>height</b>    ${toUnits(controls.height).toFixed(2)} u  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
     `<b>objects</b>   ${pois.length} labelled\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
