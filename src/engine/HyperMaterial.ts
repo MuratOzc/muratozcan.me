@@ -6,6 +6,7 @@ import {
   Vector3,
   Vector4,
   type Side,
+  type Texture,
 } from 'three';
 import { HM } from './math/curvature';
 import { HYPER_COMMON, HYPER_FRAGMENT, HYPER_VERTEX } from './shaders/hyperCore';
@@ -42,6 +43,10 @@ export interface HyperMaterialOptions {
   gridScale?: number;
   gridWidth?: number;
   gridFade?: number;
+  /** Cutout texture, sampled with the mesh UVs. */
+  map?: Texture;
+  /** Alpha below this is discarded. */
+  alphaTest?: number;
   mottleScale?: number;
   mottleAmount?: number;
   side?: Side;
@@ -59,6 +64,7 @@ function build(
   const defines: Record<string, string> = {};
   if (hemisphere === 'top') defines.TOP_HEMISPHERE = '1';
   if (hemisphere === 'bottom') defines.BOTTOM_HEMISPHERE = '1';
+  if (opts.map) defines.USE_MAP = '1';
 
   const mat = new ShaderMaterial({
     glslVersion: GLSL3,
@@ -75,6 +81,8 @@ function build(
       uGridFade: { value: opts.gridFade ?? 4.0 },
       uMottleScale: { value: opts.mottleScale ?? 40.0 },
       uMottleAmount: { value: opts.mottleAmount ?? 0.0 },
+      uMap: { value: opts.map ?? null },
+      uAlphaTest: { value: opts.alphaTest ?? 0.5 },
       uStaticPos: { value: new Vector3() },
       uStaticRot: { value: new Matrix3() },
     },

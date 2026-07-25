@@ -19,6 +19,8 @@ import {
   type Poi,
 } from './world/placement';
 import { ProximityPanel } from './world/panel';
+import { buildSkeleton } from './world/skeleton';
+import { makeTextTexture } from './world/text';
 
 /**
  * An empty world.
@@ -88,10 +90,11 @@ for (const [bearing, distance] of GROUND_FACES) {
 }
 
 // --------------------------------------------------------------------- world
-// Nothing here yet. Add objects via `spawn(...)` below, or from the console
-// through the `world` debug handle.
-const pois: Poi[] = [];
+// Structure only: the aisle, the arch, and the model at your back. Detail
+// comes later.
 const panel = new ProximityPanel();
+const skeleton = buildSkeleton(world);
+const pois: Poi[] = skeleton.pois;
 
 /**
  * Put something in the world.
@@ -145,6 +148,7 @@ addEventListener('resize', () => world.resize());
   units,
   toUnits,
   ANTIPODE_DISTANCE,
+  makeTextTexture,
   /** Quick test box: size, tessellation, placement. */
   box(opts: {
     w?: number; h?: number; d?: number; seg?: number;
@@ -205,7 +209,7 @@ function frame(now: number) {
     `<b>walked</b>    ${toUnits(controls.distanceWalked).toFixed(1)} u  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
     `<b>height</b>    ${toUnits(controls.height).toFixed(2)} u  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
-    `<b>objects</b>   ${pois.length} labelled\n` +
+    `<b>objects</b>   ${skeleton.objects.length} placed, ${pois.length} labelled\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
   requestAnimationFrame(frame);

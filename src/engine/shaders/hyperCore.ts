@@ -135,6 +135,11 @@ uniform float uGridFade;
 uniform float uMottleScale;
 uniform float uMottleAmount;
 
+#ifdef USE_MAP
+uniform sampler2D uMap;
+uniform float uAlphaTest;
+#endif
+
 in vec3 vNormal;
 in vec2 vUv;
 in float vWDot;
@@ -193,7 +198,17 @@ void main() {
   float diffuse = clamp(0.5 + 0.5 * dot(n, uLightDir), 0.0, 1.0);
   diffuse = uAmbient + (1.0 - uAmbient) * diffuse;
 
-  vec3 col = uColor * diffuse;
+  vec3 base = uColor;
+  #ifdef USE_MAP
+    // Cutout rather than blending. Sorting transparent surfaces would have to
+    // cope with the two hemisphere passes each owning half the depth range,
+    // which is not worth it for signage.
+    vec4 tex = texture(uMap, vUv);
+    if (tex.a < uAlphaTest) discard;
+    base *= tex.rgb;
+  #endif
+
+  vec3 col = base * diffuse;
 
   // Optional surface grid, in authored Unit coordinates so the lines follow the
   // geometry rather than the screen.
