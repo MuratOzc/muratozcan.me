@@ -18,6 +18,22 @@
   #help { top: 10px; right: 10px; pointer-events: none; }
   b { color: #7fd3f7; font-weight: 600; }
   .pass { color: #7ee787; } .fail { color: #ff7b72; }
+
+  .proximity-panel {
+    position: fixed; left: 50%; bottom: 8vh; transform: translateX(-50%);
+    max-width: 44ch; padding: 14px 18px; text-align: center;
+    pointer-events: none; visibility: hidden;
+    background: #0b0d10d9; border: 1px solid #39424e; border-radius: 5px;
+    backdrop-filter: blur(6px);
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    color: #c9d3dd;
+  }
+  .proximity-panel h2 {
+    margin: 0 0 4px; font-size: 13px; letter-spacing: .14em;
+    text-transform: uppercase; color: #7fd3f7; font-weight: 600;
+  }
+  .proximity-panel.untitled h2 { display: none; }
+  .proximity-panel p { margin: 0; }
 </style>
 </head>
 <body>

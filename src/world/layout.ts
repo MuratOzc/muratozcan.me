@@ -1,98 +1,96 @@
-import { BoxGeometry, Color, Vector3 } from 'three';
-import {
-  GyroVector,
-  HyperObject,
-  type HyperWorld,
-  geodesicTranslate,
-} from '../engine';
-import { ANTIPODE, DOMAINS, type Domain } from '../content/domains';
+import { Quaternion, Vector3 } from 'three';
+import { GyroVector, type HyperWorld } from '../engine';
 
 /**
- * Laying the stack out in the world.
+ * The shape of the world.
  *
- * The descent runs along a single geodesic from spawn toward the antipode.
- * Depth 0 (frontend) sits just ahead of you; depth 1 (bare metal) sits near the
- * far end. Walking one direction takes you down through every layer.
+ *                        spawn (pole)
+ *                             |
+ *          near hemisphere ---+--- personal: hobbies, links, easter eggs
+ *                             |
+ *   ============ the ring (great circle, quarter turn out) ============
+ *                the ten layers of the stack, as machine
+ *                             |
+ *           far hemisphere ---+--- approach
+ *                             |
+ *                     the antipode: you
  *
- * The antipode itself is reserved. It is the one point visible from everywhere
- * in a spherical world, at every moment, from any direction — so it holds the
- * thing every layer terminates at rather than another layer.
- *
- * Domains alternate to either side of the path so you walk between them instead
- * of into them.
+ * Every great circle on the ground has exactly two poles — points a quarter
+ * turn from every point on the circle — and those two poles are PI apart,
+ * which is the antipode relationship. So spawning at one pole puts the ring
+ * at a uniform quarter turn in all directions and puts the far pole exactly
+ * at the antipode. None of these three places is positioned by hand; they
+ * fall out of the geometry.
  */
 
-/** Geodesic distance from spawn to the shallowest domain. */
-export const PATH_START = 0.5;
-/** ...and to the deepest. Kept short of PI so the antipode stays clear. */
-export const PATH_END = 2.7;
-/** Lateral offset from the path, alternating side to side. */
-const LATERAL = 0.16;
+const UP = new Vector3(0, 1, 0);
 
-const SURFACE_COLOR = new Color(0xd8d0bd);
-const DEEP_COLOR = new Color(0x39424e);
+/** Geodesic distance from spawn to the ring. */
+export const RING_DISTANCE = Math.PI / 2;
 
-export function domainDistance(depth: number): number {
-  return PATH_START + (PATH_END - PATH_START) * depth;
+/**
+ * Place something on the ground at a compass bearing and a geodesic distance
+ * from spawn.
+ *
+ * IMPORTANT: this is the only correct way to position by offset. Do NOT build
+ * a position by translating an already-translated GyroVector sideways —
+ * `translate` composes isometries and carries holonomy, so a lateral step
+ * comes out scaled by cos(distance). It pinches to zero at the quarter turn
+ * and FLIPS SIGN beyond it, which turns two intended parallel rows into an X.
+ *
+ * There is also no way to fix that by being cleverer: spherical space has no
+ * parallel lines at all. Any two geodesics meet, twice. Anything long and
+ * straight converges, so layouts have to be radial rather than rectilinear.
+ */
+export function placeOnGround(bearing: number, distance: number): GyroVector {
+  const dir = new Vector3(Math.sin(bearing), 0, -Math.cos(bearing));
+  return GyroVector.fromGeodesic(dir, distance);
 }
 
-export function domainPlacement(depth: number, index: number): GyroVector {
-  const side = index % 2 === 0 ? -1 : 1;
-  return GyroVector.fromGeodesic(
-    new Vector3(0, 0, -1),
-    domainDistance(depth),
-  ).translate(geodesicTranslate(new Vector3(side * LATERAL, 0, 0)));
-}
-
-function monolith(domain: Domain): BoxGeometry {
-  // Deeper layers are heavier and taller. At eye height 0.1 the deepest of
-  // these stands about 4.5x a person, which is tall enough that the
-  // horospherical bow on its verticals is plainly visible.
-  const h = 0.16 + domain.depth * 0.30;
-  const w = 0.05 + domain.depth * 0.035;
-  const g = new BoxGeometry(w, h, w, 4, Math.round(10 + domain.depth * 22), 4);
-  g.translate(0, h / 2, 0);
-  return g;
-}
-
-export interface PlacedDomain {
-  domain: Domain;
-  object: HyperObject;
-  distance: number;
-}
-
-export function buildStack(world: HyperWorld): PlacedDomain[] {
-  const placed: PlacedDomain[] = [];
-
-  DOMAINS.forEach((domain, i) => {
-    const object = new HyperObject(domainPlacement(domain.depth, i));
-    object.addGeometry(world.shared, monolith(domain), {
-      color: SURFACE_COLOR.clone().lerp(DEEP_COLOR, domain.depth),
-      ambient: 0.5 - domain.depth * 0.12,
-    });
-    world.add(object);
-    placed.push({ domain, object, distance: domainDistance(domain.depth) });
-  });
-
-  return placed;
+/** Bearing around the ring for item `i` of `n`. */
+export function ringBearing(i: number, n: number): number {
+  return (i / n) * Math.PI * 2;
 }
 
 /**
- * The antipode marker.
- *
- * Sits a hair short of PI because the Poincare radius is infinite exactly at
- * the antipode. The far-hemisphere pass maps it back to a sane magnitude.
+ * The antipode sits a hair short of PI, because the Poincare radius is
+ * infinite exactly there. The far-hemisphere pass maps it back to a sane
+ * magnitude.
  */
-export function buildAntipode(world: HyperWorld): HyperObject {
-  const h = 0.55;
-  const g = new BoxGeometry(0.07, h, 0.07, 5, 40, 5);
-  g.translate(0, h / 2, 0);
-  const object = new HyperObject(
-    GyroVector.fromGeodesic(new Vector3(0, 0, -1), Math.PI - 0.04),
-  );
-  object.addGeometry(world.shared, g, { color: 0x2f4f8f, ambient: 0.42 });
-  world.add(object);
-  return object;
+export const ANTIPODE_DISTANCE = Math.PI - 0.04;
+
+export function placeAtAntipode(): GyroVector {
+  return placeOnGround(0, ANTIPODE_DISTANCE);
 }
 
-export { ANTIPODE };
+/**
+ * A point of interest: somewhere in the world with something to say.
+ * Proximity panels read from this.
+ */
+export interface Poi {
+  id: string;
+  title: string;
+  body: string;
+  gv: GyroVector;
+  /** Geodesic radius within which the panel shows, in radians. */
+  radius: number;
+}
+
+/** Geodesic distance from the viewer to a placed GyroVector. */
+export function distanceToViewer(gv: GyroVector, worldGV: GyroVector): number {
+  return 2 * Math.atan(gv.add(worldGV).vec.length());
+}
+
+/** Orient an object about its own up axis, in its local Unit frame. */
+export function faceBearing(object: { rotation: { y: number } }, bearing: number): void {
+  object.rotation.y = bearing;
+}
+
+export { UP };
+
+/** Convenience for callers that want a yaw quaternion. */
+export function yawQuaternion(angle: number): Quaternion {
+  return new Quaternion().setFromAxisAngle(UP, angle);
+}
+
+export type { HyperWorld };

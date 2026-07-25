@@ -8,7 +8,9 @@ import {
   formatSelfTests,
   runSelfTests,
 } from './engine';
-import { ANTIPODE, buildAntipode, buildStack } from './world/layout';
+import { buildWorld } from './world/build';
+import { ProximityPanel } from './world/panel';
+import { RING_DISTANCE } from './world/layout';
 
 /**
  * Demo world exercising the engine.
@@ -82,12 +84,11 @@ for (const f of faces) {
   world.add(tile);
 }
 
-// --------------------------------------------------------------- the stack
-// Every layer of the technology, laid out as a descent along one geodesic.
-// Walk forward from spawn and you go down the stack; the antipode holds the
-// person all of it terminates at.
-const stack = buildStack(world);
-buildAntipode(world);
+// --------------------------------------------------------------- the world
+// Ring of the stack at a quarter turn, personal markers in the near
+// hemisphere, and the antipode holding the person all of it terminates at.
+const built = buildWorld(world);
+const panel = new ProximityPanel();
 
 // ------------------------------------------------------------ scattered props
 // Ground detail. Without something small and irregular nearby there is no cue
@@ -178,19 +179,8 @@ function frame(now: number) {
   const gv = world.worldGV;
   const travelled = world.distanceFromOrigin();
 
-  // Which layer of the stack are you standing in? Geodesic distance to each
-  // domain, cheapest possible: compose and read the Poincare radius.
-  let nearest: string = ANTIPODE.title;
-  let nearestBlurb: string = ANTIPODE.blurb;
-  let nearestDist = Infinity;
-  for (const p of stack) {
-    const d = 2 * Math.atan(p.object.localGV.add(gv).vec.length());
-    if (d < nearestDist) {
-      nearestDist = d;
-      nearest = p.domain.title;
-      nearestBlurb = p.domain.blurb;
-    }
-  }
+  const near = panel.update(built.pois, gv, dt);
+
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
     `<b>world</b>     circumference 2π = ${(2 * Math.PI).toFixed(4)} rad\n` +
@@ -201,8 +191,7 @@ function frame(now: number) {
     `<b>poincare</b>  |p| = ${gv.vec.length().toFixed(4)}\n` +
     `<b>height</b>    ${controls.height.toFixed(4)} rad  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
-    `\n<b>nearest</b>   ${nearest}  (${nearestDist.toFixed(2)} rad)\n` +
-    `          ${nearestBlurb}\n` +
+    `<b>ring</b>      ${RING_DISTANCE.toFixed(3)} rad out${near ? `   near: ${near.title || 'something'}` : ''}\n` +
     `<b>holonomy</b>  ${gv.gyr.w.toFixed(6)} (w component)\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
