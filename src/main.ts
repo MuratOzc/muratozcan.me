@@ -20,6 +20,7 @@ import {
 } from './world/placement';
 import { ProximityPanel } from './world/panel';
 import { buildFigure, buildSkeleton } from './world/skeleton';
+import { buildStations } from './world/stations';
 import { makeTextTexture } from './world/text';
 
 /**
@@ -94,8 +95,9 @@ for (const [bearing, distance] of GROUND_FACES) {
 // comes later.
 const panel = new ProximityPanel();
 const skeleton = buildSkeleton(world);
+const stations = buildStations(world);
 buildFigure(world).catch((e) => console.error('figure failed to load:', e));
-const pois: Poi[] = skeleton.pois;
+const pois: Poi[] = [...skeleton.pois, ...stations.pois];
 
 /**
  * Put something in the world.
@@ -210,7 +212,7 @@ function frame(now: number) {
     `<b>walked</b>    ${toUnits(controls.distanceWalked).toFixed(1)} u  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
     `<b>height</b>    ${toUnits(controls.height).toFixed(2)} u  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
-    `<b>objects</b>   ${skeleton.objects.length} placed, ${pois.length} labelled\n` +
+    `<b>objects</b>   ${skeleton.objects.length + stations.objects.length} placed, ${pois.length} labelled\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
   requestAnimationFrame(frame);
