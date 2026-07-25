@@ -1,4 +1,4 @@
-import { BoxGeometry, PlaneGeometry, Vector3 } from 'three';
+import { BoxGeometry, PlaneGeometry, Vector3, type BufferGeometry } from 'three';
 import {
   Controls,
   GyroVector,
@@ -7,18 +7,30 @@ import {
   HyperWorld,
   formatSelfTests,
   runSelfTests,
+  type HyperMaterialOptions,
 } from './engine';
-import { buildWorld } from './world/build';
+import {
+  ANTIPODE_DISTANCE,
+  placeAlongPath,
+  placeOnGround,
+  pathYaw,
+  type Poi,
+} from './world/placement';
 import { ProximityPanel } from './world/panel';
-import { RING_DISTANCE } from './world/layout';
 
 /**
- * Demo world exercising the engine.
+ * An empty world.
  *
- * The ground is built as the six faces of a cube inflated onto the 3-sphere —
- * the {4,3} tiling, which is what `setTileType(3)` describes. Each face spans
- * 90 degrees of the world, so six of them close it up completely.
+ * Ground, sky, a viewer who can walk. Nothing placed on it yet.
+ *
+ * Scale discipline, because it is the easiest thing to get wrong here: with
+ * unitScale = 1, one authored unit IS one radian of geodesic distance, and the
+ * whole universe is only 2*PI around. A person is EYE_HEIGHT tall and
+ * everything else is sized against that. The world is roughly 63 eye-heights
+ * around and takes ~28 seconds to lap.
  */
+
+const EYE_HEIGHT = 0.1;
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
@@ -35,46 +47,28 @@ const world = new HyperWorld({
 });
 world.setLightDirection(new Vector3(0.35, 0.9, 0.25));
 
-const HALF_TURN = Math.PI;
-const QUARTER = Math.PI / 2;
-
-// Scale discipline. In Unit coordinates with unitScale = 1, one unit IS one
-// radian of geodesic distance, and the whole universe is only 2*PI around. So
-// a person is EYE_HEIGHT tall and everything else is sized against that. Get
-// this wrong and objects are literally continent-sized.
-// 0.1 is CodeParade's value for Hyperbolica. It makes the world about 63 eye
-// heights around, which is what gives it the feel of a small planet rather
-// than a room or a continent.
-const EYE_HEIGHT = 0.1;
-
-// -------------------------------------------------------------- ground
+// -------------------------------------------------------------------- ground
+// Six faces of a cube inflated onto the 3-sphere — the {4,3} tiling, the only
+// way to tile a sphere with squares. All six lie on the SAME great 2-sphere,
+// so the surface is seamless; give them different colours or a tile-local
+// grid and the cube becomes visible, which is why neither is used here.
 const groundGeo = new PlaneGeometry(2, 2, 96, 96);
 groundGeo.rotateX(-Math.PI / 2);
 
-interface Face {
-  dir: Vector3;
-  dist: number;
-}
-
-// The six faces of a cube inflated onto the 3-sphere. They all lie on the SAME
-// great 2-sphere, so the surface is genuinely seamless — give them different
-// colours or a tile-local grid, though, and the cube becomes obvious. Uniform
-// colour plus world-anchored mottling keeps the tiling invisible.
-const faces: Face[] = [
-  { dir: new Vector3(0, 0, 0), dist: 0 },
-  { dir: new Vector3(1, 0, 0), dist: QUARTER },
-  { dir: new Vector3(-1, 0, 0), dist: QUARTER },
-  { dir: new Vector3(0, 0, 1), dist: QUARTER },
-  { dir: new Vector3(0, 0, -1), dist: QUARTER },
-  // The sixth face sits at the antipode, where the Poincare radius is
-  // infinite. Nudging it a hair short keeps it finite; the far-hemisphere
-  // inversion in the shader maps it back to a sane magnitude.
-  { dir: new Vector3(1, 0, 0), dist: HALF_TURN - 1e-3 },
+const QUARTER = Math.PI / 2;
+const GROUND_FACES: Array<[number, number]> = [
+  [0, 0],
+  [0, QUARTER],
+  [Math.PI, QUARTER],
+  [QUARTER, QUARTER],
+  [-QUARTER, QUARTER],
+  [0, Math.PI - 1e-3],
 ];
 
-for (const f of faces) {
-  const gv = f.dist === 0 ? new GyroVector() : GyroVector.fromGeodesic(f.dir, f.dist);
-  const tile = new HyperObject(gv);
+for (const [bearing, distance] of GROUND_FACES) {
+  const tile = new HyperObject(
+    distance === 0 ? new GyroVector() : placeOnGround(bearing, distance),
+  );
   tile.addGeometry(world.shared, groundGeo, {
     color: 0x8ab967,
     ambient: 0.62,
@@ -84,79 +78,91 @@ for (const f of faces) {
   world.add(tile);
 }
 
-// --------------------------------------------------------------- the world
-// Ring of the stack at a quarter turn, personal markers in the near
-// hemisphere, and the antipode holding the person all of it terminates at.
-const built = buildWorld(world);
+// --------------------------------------------------------------------- world
+// Nothing here yet. Add objects via `spawn(...)` below, or from the console
+// through the `world` debug handle.
+const pois: Poi[] = [];
 const panel = new ProximityPanel();
 
-// ------------------------------------------------------------ scattered props
-// Ground detail. Without something small and irregular nearby there is no cue
-// for speed or scale while walking.
-const propGeo = new BoxGeometry(0.022, 0.022, 0.022, 2, 2, 2);
-propGeo.translate(0, 0.011, 0);
-for (let i = 0; i < 60; i++) {
-  const ang = (i / 60) * Math.PI * 2 * 5.3;
-  const dist = 0.2 + (i / 60) * 2.9;
-  const dir = new Vector3(Math.cos(ang), 0, Math.sin(ang));
-  const obj = new HyperObject(GyroVector.fromGeodesic(dir, dist));
-  obj.addGeometry(world.shared, propGeo, {
-    color: [0x9aa878, 0x8b9c6e, 0xa8b184, 0x7f8f66][i % 4],
-    ambient: 0.55,
-  });
-  world.add(obj);
+/**
+ * Put something in the world.
+ *
+ * `at` is the placement. `yaw` rotates the object about its own up axis, in
+ * its local Unit frame — that is an ordinary Three rotation applied before the
+ * curved-space lift, so it behaves the way you expect.
+ */
+export function spawn(
+  at: GyroVector,
+  geometry: BufferGeometry,
+  options: HyperMaterialOptions = {},
+  yaw = 0,
+): HyperObject {
+  const object = new HyperObject(at);
+  object.rotation.y = yaw;
+  object.addGeometry(world.shared, geometry, options);
+  world.add(object);
+  return object;
+}
+
+/** Attach text to a place, shown when the viewer walks near it. */
+export function label(gv: GyroVector, title: string, body: string, radius = 0.25): void {
+  pois.push({ id: `poi-${pois.length}`, title, body, gv, radius });
 }
 
 // ------------------------------------------------------------------ controls
 const controls = new Controls(world, canvas, {
   eyeHeight: EYE_HEIGHT,
-  // Multiples of eye height per second — HyperEngine's convention, and
-  // CodeParade's number. A full lap takes about 28 seconds.
+  // Multiples of eye height per second. A lap takes about 28 seconds.
   speed: 2.25,
 });
 controls.reset();
 
 addEventListener('resize', () => world.resize());
 
-// Debug handle for inspecting the world from the console.
+// Console handle for authoring and inspection.
 (window as unknown as Record<string, unknown>).demo = {
   world,
   controls,
+  pois,
   GyroVector,
   Vector3,
   HyperObject,
-  /** Drop a test box of a given size, tessellation and placement. */
+  BoxGeometry,
+  spawn,
+  label,
+  placeOnGround,
+  placeAlongPath,
+  pathYaw,
+  ANTIPODE_DISTANCE,
+  /** Quick test box: size, tessellation, placement. */
   box(opts: {
-    w?: number; h?: number; d?: number;
-    seg?: number;
-    dist?: number; dir?: Vector3;
+    w?: number; h?: number; d?: number; seg?: number;
+    along?: number; lateral?: number;
+    bearing?: number; distance?: number;
     color?: number; tanK?: boolean;
-  }) {
-    const w = opts.w ?? 0.4, h = opts.h ?? 0.4, dd = opts.d ?? 0.4;
-    const seg = opts.seg ?? 1;
+  } = {}) {
+    const w = opts.w ?? 0.1, h = opts.h ?? 0.2, dd = opts.d ?? 0.1;
+    const seg = opts.seg ?? 4;
     const g = new BoxGeometry(w, h, dd, seg, seg, seg);
     g.translate(0, h / 2, 0);
-    const gv = opts.dist
-      ? GyroVector.fromGeodesic(opts.dir ?? new Vector3(0, 0, -1), opts.dist)
-      : new GyroVector();
-    const o = new HyperObject(gv, opts.tanK ?? true);
-    o.addGeometry(world.shared, g, { color: opts.color ?? 0xdd5522, ambient: 0.5 });
-    world.add(o);
-    return o;
-  },
-  clearBoxes(objs: HyperObject[]) {
-    for (const o of objs) world.remove(o);
+    const at = opts.along !== undefined
+      ? placeAlongPath(opts.along, opts.lateral ?? 0)
+      : placeOnGround(opts.bearing ?? 0, opts.distance ?? 0.6);
+    const object = new HyperObject(at, opts.tanK ?? true);
+    object.addGeometry(world.shared, g, { color: opts.color ?? 0xdd5522, ambient: 0.5 });
+    world.add(object);
+    return object;
   },
 };
 
-// --------------------------------------------------------------- self tests
+// ---------------------------------------------------------------- self tests
 const results = runSelfTests();
 const failed = results.filter((r) => !r.pass).length;
 tests.innerHTML =
   `<b class="${failed ? 'fail' : 'pass'}">${results.length - failed}/${results.length} math invariants hold</b>\n` +
   formatSelfTests(results);
 
-// -------------------------------------------------------------------- loop
+// ---------------------------------------------------------------------- loop
 let last = performance.now();
 let fps = 0;
 let acc = 0;
@@ -175,24 +181,18 @@ function frame(now: number) {
 
   controls.update(dt);
   world.render();
-
-  const gv = world.worldGV;
-  const travelled = world.distanceFromOrigin();
-
-  const near = panel.update(built.pois, gv, dt);
+  panel.update(pois, world.worldGV, dt);
 
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
-    `<b>world</b>     circumference 2π = ${(2 * Math.PI).toFixed(4)} rad\n` +
-    // Straight-line distance from spawn peaks at PI, at the antipode, and then
+    `<b>world</b>     2π = ${(2 * Math.PI).toFixed(3)} rad around, empty\n` +
+    // Straight-line distance from spawn peaks at PI at the antipode and then
     // counts back down. It is not an odometer — distanceWalked is.
-    `<b>from spawn</b> ${travelled.toFixed(3)} rad  (max ${Math.PI.toFixed(3)} at the antipode)\n` +
+    `<b>from spawn</b> ${world.distanceFromOrigin().toFixed(3)} rad  (max ${Math.PI.toFixed(3)})\n` +
     `<b>walked</b>    ${controls.distanceWalked.toFixed(2)} rad  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
-    `<b>poincare</b>  |p| = ${gv.vec.length().toFixed(4)}\n` +
     `<b>height</b>    ${controls.height.toFixed(4)} rad  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
-    `<b>ring</b>      ${RING_DISTANCE.toFixed(3)} rad out${near ? `   near: ${near.title || 'something'}` : ''}\n` +
-    `<b>holonomy</b>  ${gv.gyr.w.toFixed(6)} (w component)\n` +
+    `<b>objects</b>   ${pois.length} labelled\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
   requestAnimationFrame(frame);

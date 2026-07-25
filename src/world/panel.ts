@@ -1,5 +1,5 @@
 import type { GyroVector } from '../engine';
-import { distanceToViewer, type Poi } from './layout';
+import { distanceToViewer, type Poi } from './placement';
 
 /**
  * Proximity panels.
