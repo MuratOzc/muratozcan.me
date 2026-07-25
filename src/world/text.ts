@@ -62,6 +62,71 @@ export function makeArrowTexture(color = '#5c6b52'): Texture {
   return tex;
 }
 
+/**
+ * An exhibition label: a number, a title, and a subtitle beneath.
+ *
+ * Drawn as one texture rather than three planes because a low sign read at an
+ * angle wants the whole layout to foreshorten together.
+ */
+export function makeSignTexture(n: number, title: string, subtitle: string): Texture {
+  const w = 1024;
+  const h = 384;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#efece3';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#c8c2b2';
+  ctx.fillRect(0, h - 10, w, 10);
+
+  const pad = 44;
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+
+  // Station number, set large and light in the corner.
+  ctx.fillStyle = '#b3aa96';
+  ctx.font = '700 132px ui-monospace, Consolas, monospace';
+  const num = String(n).padStart(2, '0');
+  ctx.fillText(num, pad, 148);
+  const numWidth = ctx.measureText(num).width;
+
+  const textLeft = pad + numWidth + 40;
+
+  ctx.fillStyle = '#20262c';
+  ctx.font = '600 84px ui-monospace, Consolas, monospace';
+  ctx.letterSpacing = '4px';
+  ctx.fillText(title.toUpperCase(), textLeft, 140);
+
+  ctx.letterSpacing = '0px';
+  ctx.fillStyle = '#66707a';
+  ctx.font = '400 46px ui-monospace, Consolas, monospace';
+  // Wrap the subtitle across up to two lines.
+  const words = subtitle.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > w - pad * 2 && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, pad, 246 + i * 62));
+
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  tex.minFilter = LinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 export function makeTextTexture(text: string, opts: TextTextureOptions = {}): Texture {
   const width = opts.width ?? 1024;
   const height = opts.height ?? 256;
