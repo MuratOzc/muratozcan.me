@@ -1,0 +1,22 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vs/
+*.slnx
+*.sln
+*.user
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log

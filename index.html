@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spherical engine — demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  .panel {
+    position: fixed; padding: 10px 12px; white-space: pre;
+    background: #0b0d10cc; border: 1px solid #2a3038; border-radius: 4px;
+    color: #d8dee9; backdrop-filter: blur(4px);
+    font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  #hud { top: 10px; left: 10px; pointer-events: none; }
+  #tests { bottom: 10px; left: 10px; max-width: 62ch; white-space: pre-wrap; }
+  #help { top: 10px; right: 10px; pointer-events: none; }
+  b { color: #7fd3f7; font-weight: 600; }
+  .pass { color: #7ee787; } .fail { color: #ff7b72; }
+</style>
+</head>
+<body>
+  <canvas id="view"></canvas>
+  <div class="panel" id="hud"></div>
+  <div class="panel" id="tests"></div>
+  <div class="panel" id="help">click to look
+WASD   move
+Space  up
+Shift  down
+R      sprint
+
+walk straight ahead long
+enough and you return
+to where you started</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
