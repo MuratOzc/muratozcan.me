@@ -27,8 +27,8 @@ const world = new HyperWorld({
   unitScale: 1,
   background: 0xaebfd0,
   fogColor: [0.70, 0.78, 0.88],
-  fogDensity: 0.45,
-  fov: 75,
+  fogDensity: 0.9,
+  fov: 58,
 });
 world.setLightDirection(new Vector3(0.35, 0.9, 0.25));
 

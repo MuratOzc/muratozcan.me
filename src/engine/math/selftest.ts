@@ -212,6 +212,46 @@ export function runSelfTests(): TestResult[] {
     });
   }
 
+  // --- Angular size follows 1/sin(theta) -------------------------------
+  // The projection renders Poincare coordinates through an ordinary
+  // perspective camera. That is only legitimate if it reproduces true
+  // spherical optics: an object of size s at geodesic distance theta must
+  // subtend s/sin(theta), shrinking to a minimum at a quarter turn and then
+  // GROWING again as it approaches the antipode. This measures it.
+  {
+    setGeometry(1, 1);
+    const fwd = new Vector3(0, 0, -1);
+    const right = new Vector3(1, 0, 0);
+    const s = 1e-5;
+    let worstRel = 0;
+    let minAt = 0;
+    let minSize = Infinity;
+    for (let i = 1; i <= 60; i++) {
+      const theta = (i / 61) * Math.PI;
+      const a = new GyroVector().translate(geodesicTranslate(fwd.clone().multiplyScalar(theta)));
+      // transformPoint, not translate().point(). `translate` composes two
+      // isometries and carries the holonomy rotation with it; `transformPoint`
+      // is where a vertex offset within the object actually lands, which is
+      // what the vertex shader computes. Using the former here measures
+      // s*cos(theta) instead of s, because the gyration rotates the lateral
+      // step back out.
+      const offset = geodesicTranslate(right.clone().multiplyScalar(s));
+      // Angular separation seen from the origin, which is where the viewer is.
+      const measured = a.point().angleTo(a.transformPoint(offset));
+      const predicted = s / Math.sin(theta);
+      worstRel = Math.max(worstRel, Math.abs(measured - predicted) / predicted);
+      if (measured < minSize) {
+        minSize = measured;
+        minAt = theta;
+      }
+    }
+    results.push({
+      name: 'angular size == s / sin(theta)',
+      pass: worstRel < 1e-4 && Math.abs(minAt - Math.PI / 2) < 0.06,
+      detail: `max rel error ${worstRel.toExponential(2)}, minimum at ${minAt.toFixed(3)} rad (quarter turn = ${(Math.PI / 2).toFixed(3)})`,
+    });
+  }
+
   setGeometry(saved.K, saved.unitScale);
   return results;
 }

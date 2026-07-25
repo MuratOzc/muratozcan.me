@@ -41,6 +41,7 @@ export interface HyperMaterialOptions {
   tanKHeight?: boolean;
   gridScale?: number;
   gridWidth?: number;
+  gridFade?: number;
   side?: Side;
 }
 
@@ -69,6 +70,7 @@ function build(
       uAmbient: { value: opts.ambient ?? 0.55 },
       uGridScale: { value: opts.gridScale ?? 0 },
       uGridWidth: { value: opts.gridWidth ?? 1.5 },
+      uGridFade: { value: opts.gridFade ?? 4.0 },
     },
     vertexShader: HYPER_COMMON + HYPER_VERTEX,
     fragmentShader: HYPER_COMMON + HYPER_FRAGMENT,

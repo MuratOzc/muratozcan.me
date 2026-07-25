@@ -111,6 +111,7 @@ uniform vec4 uFog;
 uniform float uFogInvDist;
 uniform float uGridScale;
 uniform float uGridWidth;
+uniform float uGridFade;
 
 in vec3 vNormal;
 in vec2 vUv;
@@ -152,11 +153,16 @@ void main() {
 
   // Optional surface grid, in authored Unit coordinates so the lines follow the
   // geometry rather than the screen.
+  //
+  // It has to fade with distance. Near the grazing band the ground compresses
+  // enormously, fwidth explodes, and an un-faded grid collapses into a smear of
+  // aliased mush — which reads as the render being broken when it is not.
   if (uGridScale > 0.0) {
     vec2 g = abs(fract(vLocalPos.xz * uGridScale) - 0.5);
     vec2 w = fwidth(vLocalPos.xz * uGridScale) * uGridWidth;
     vec2 line = smoothstep(vec2(0.0), w, g);
-    col *= 0.55 + 0.45 * min(line.x, line.y);
+    float fade = 1.0 / (1.0 + w_dot * uGridFade);
+    col *= mix(1.0, 0.55 + 0.45 * min(line.x, line.y), fade);
   }
 
   col = mix(col, uFog.rgb, fog_a);
