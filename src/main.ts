@@ -136,7 +136,35 @@ controls.reset();
 addEventListener('resize', () => world.resize());
 
 // Debug handle for inspecting the world from the console.
-(window as unknown as Record<string, unknown>).demo = { world, controls, GyroVector, Vector3 };
+(window as unknown as Record<string, unknown>).demo = {
+  world,
+  controls,
+  GyroVector,
+  Vector3,
+  HyperObject,
+  /** Drop a test box of a given size, tessellation and placement. */
+  box(opts: {
+    w?: number; h?: number; d?: number;
+    seg?: number;
+    dist?: number; dir?: Vector3;
+    color?: number; tanK?: boolean;
+  }) {
+    const w = opts.w ?? 0.4, h = opts.h ?? 0.4, dd = opts.d ?? 0.4;
+    const seg = opts.seg ?? 1;
+    const g = new BoxGeometry(w, h, dd, seg, seg, seg);
+    g.translate(0, h / 2, 0);
+    const gv = opts.dist
+      ? GyroVector.fromGeodesic(opts.dir ?? new Vector3(0, 0, -1), opts.dist)
+      : new GyroVector();
+    const o = new HyperObject(gv, opts.tanK ?? true);
+    o.addGeometry(world.shared, g, { color: opts.color ?? 0xdd5522, ambient: 0.5 });
+    world.add(o);
+    return o;
+  },
+  clearBoxes(objs: HyperObject[]) {
+    for (const o of objs) world.remove(o);
+  },
+};
 
 // --------------------------------------------------------------- self tests
 const results = runSelfTests();

@@ -252,6 +252,41 @@ export function runSelfTests(): TestResult[] {
     });
   }
 
+  // --- Geodesics project to straight screen lines -----------------------
+  // Counter-intuitive but important: because the viewer sits at the Poincare
+  // origin, a point's screen direction is just normalize(p), which reduces to
+  // the gnomonic direction — and gnomonic maps great circles to straight
+  // lines. So a geodesic edge renders perfectly straight no matter how long
+  // it is or how strong the curvature.
+  //
+  // The practical consequence is that tessellation does NOT affect silhouette.
+  // A straight chord through Poincare space and the true geodesic share their
+  // endpoints and both project to lines, so they draw the same screen edge.
+  // Subdivision still matters for shading, fog, depth ordering and the
+  // hemisphere discard boundary — just not for whether edges look straight.
+  {
+    setGeometry(1, 1);
+    let worst = 0;
+    for (const [dist, half] of [[0.4, 0.3], [0.8, 0.4], [1.5, 0.8], [2.4, 1.0]]) {
+      const at = (lateral: number) =>
+        GyroVector.fromGeodesic(new Vector3(0, 0, -1), dist)
+          .transformPoint(new Vector3(lateral, 0, 0))
+          .normalize();
+      const a = at(-half);
+      const b = at(half);
+      const m = at(0);
+      // If A, B and the midpoint are coplanar with the eye, they are collinear
+      // on screen.
+      const n = new Vector3().crossVectors(a, b).normalize();
+      worst = Math.max(worst, Math.abs(n.dot(m)));
+    }
+    results.push({
+      name: 'geodesics render as straight screen lines',
+      pass: worst < 1e-12,
+      detail: `max out-of-plane ${worst.toExponential(2)} — so tessellation does not change silhouette`,
+    });
+  }
+
   setGeometry(saved.K, saved.unitScale);
   return results;
 }
