@@ -15,6 +15,13 @@ export interface ControlsOptions {
   speed?: number;
   sprintMultiplier?: number;
   lookSensitivity?: number;
+  /** Keyboard turn rate, radians per second. */
+  turnSpeed?: number;
+  /**
+   * Largest believable mouse delta in a single event, in pixels. Anything
+   * bigger is treated as spurious and dropped — see the note on the handler.
+   */
+  maxMouseDelta?: number;
   /** Seconds to reach ~63% of target velocity. 0 disables smoothing. */
   smoothTime?: number;
   /** Head bob amplitude as a fraction of eye height. 0 disables it. */
@@ -47,8 +54,19 @@ export class Controls {
   headBob: number;
   mode: 'walk' | 'fly';
 
+  turnSpeed: number;
+  maxMouseDelta: number;
+
   yaw = 0;
   pitch = 0;
+
+  /**
+   * How many mouse events have been rejected as spurious. Surfaced so a jump
+   * can be checked against it rather than guessed at.
+   */
+  rejectedSpikes = 0;
+  /** Largest single-event delta seen, rejected or not. */
+  largestDelta = 0;
 
   /**
    * Total path length walked, in radians. Distinct from distance-from-spawn,
@@ -64,6 +82,7 @@ export class Controls {
   private velocity = new Vector3();
   private bobPhase = 0;
   private locked = false;
+  private skipNextMouse = false;
 
   constructor(
     private world: HyperWorld,
@@ -74,6 +93,8 @@ export class Controls {
     this.speed = opts.speed ?? 2.25;
     this.sprintMultiplier = opts.sprintMultiplier ?? 2.6;
     this.lookSensitivity = opts.lookSensitivity ?? 0.0022;
+    this.turnSpeed = opts.turnSpeed ?? 1.7;
+    this.maxMouseDelta = opts.maxMouseDelta ?? 180;
     this.smoothTime = opts.smoothTime ?? 0.09;
     this.headBob = opts.headBob ?? 0.018;
     this.mode = opts.mode ?? 'walk';
@@ -83,7 +104,7 @@ export class Controls {
   private attach(): void {
     addEventListener('keydown', (e) => {
       this.keys.add(e.code);
-      if (e.code === 'Space') e.preventDefault();
+      if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
       if (e.code === 'KeyF') this.mode = this.mode === 'walk' ? 'fly' : 'walk';
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -95,13 +116,36 @@ export class Controls {
     this.element.addEventListener('click', () => this.element.requestPointerLock());
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.element;
+      // The first event after lock engages routinely carries a delta measured
+      // from wherever the cursor happened to be, not from the lock origin.
+      // Dropping it is standard practice and costs nothing.
+      this.skipNextMouse = this.locked;
     });
+
     addEventListener('mousemove', (e) => {
       if (!this.locked) return;
-      this.yaw -= e.movementX * this.lookSensitivity;
-      this.pitch -= e.movementY * this.lookSensitivity;
-      const lim = Math.PI / 2 - 0.001;
-      this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
+
+      const dx = e.movementX;
+      const dy = e.movementY;
+      this.largestDelta = Math.max(this.largestDelta, Math.abs(dx), Math.abs(dy));
+
+      if (this.skipNextMouse) {
+        this.skipNextMouse = false;
+        return;
+      }
+
+      // Pointer Lock emits occasional spurious deltas — hundreds of pixels in
+      // a single event, which at this sensitivity is most of a right angle in
+      // one frame. Nothing a hand can do produces that, so drop it rather than
+      // smooth it: smoothing would still turn you, just more slowly.
+      if (Math.abs(dx) > this.maxMouseDelta || Math.abs(dy) > this.maxMouseDelta) {
+        this.rejectedSpikes++;
+        return;
+      }
+
+      this.yaw -= dx * this.lookSensitivity;
+      this.pitch -= dy * this.lookSensitivity;
+      this.clampPitch();
     });
   }
 
@@ -129,7 +173,21 @@ export class Controls {
     return gv.untranslate(geodesicTranslate(new Vector3(0, delta, 0)));
   }
 
+  private clampPitch(): void {
+    const lim = Math.PI / 2 - 0.001;
+    this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
+  }
+
   update(dt: number): void {
+    // Arrow keys turn the view. Same state the mouse drives, so the two are
+    // interchangeable — and a way to look around with no pointer events
+    // involved at all, which makes mouse-specific faults obvious by contrast.
+    if (this.keys.has('ArrowLeft')) this.yaw += this.turnSpeed * dt;
+    if (this.keys.has('ArrowRight')) this.yaw -= this.turnSpeed * dt;
+    if (this.keys.has('ArrowUp')) this.pitch += this.turnSpeed * dt;
+    if (this.keys.has('ArrowDown')) this.pitch -= this.turnSpeed * dt;
+    this.clampPitch();
+
     // The Three camera only ever rotates; its position stays at the origin.
     this.euler.set(this.pitch, this.yaw, 0);
     this.world.camera.quaternion.setFromEuler(this.euler);

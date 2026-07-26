@@ -216,6 +216,9 @@ function frame(now: number) {
     `<b>height</b>    ${toUnits(controls.height).toFixed(2)} u  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
     `<b>objects</b>   ${skeleton.objects.length + stations.objects.length} placed, ${pois.length} labelled\n` +
+    // Diagnostics for the camera-jump report: if a jump happens and the spike
+    // count does not move, the cause is something other than a bad delta.
+    `<b>mouse</b>     peak ${controls.largestDelta.toFixed(0)}px  ·  ${controls.rejectedSpikes} spike${controls.rejectedSpikes === 1 ? '' : 's'} dropped\n` +
     `<b>fps</b>       ${fps.toFixed(0)}`;
 
   requestAnimationFrame(frame);
