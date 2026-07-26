@@ -1,5 +1,6 @@
 import type { GyroVector, HyperObject, HyperWorld } from '../../engine';
 import type { Poi } from '../placement';
+import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
 import { buildMailbox } from './mailbox';
 import { buildRack } from './rack';
@@ -41,6 +42,11 @@ export const EXHIBITS: Record<
     const model = buildWorldModel(world, at, yaw);
     out.objects.push(model.object);
     out.tickers.push(model.tick);
+  },
+  data(world, at, yaw, out) {
+    const cabinets = buildCabinets(world, at, yaw);
+    out.objects.push(cabinets.object);
+    out.tickers.push(cabinets.tick);
   },
   infrastructure(world, at, yaw, out) {
     const rack = buildRack(world, at, yaw);
