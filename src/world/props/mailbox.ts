@@ -155,6 +155,7 @@ export function buildMailbox(
       ambient: 0.9,
       alphaTest: 0.3,
       castShadow: false,
+      receiveShadow: false,
     });
   });
 

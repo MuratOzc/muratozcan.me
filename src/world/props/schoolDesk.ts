@@ -1,4 +1,4 @@
-import { CylinderGeometry, PlaneGeometry } from 'three';
+import { CylinderGeometry, Group, PlaneGeometry } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
@@ -12,6 +12,10 @@ import { localizedCanvasTexture } from '../text';
  * it is the literal equation in placement.ts that positions every object in
  * this world, this board included. The one formula from school that turned
  * out to be load-bearing.
+ *
+ * Layout: the board and the desk are two separately-angled nodes, staggered
+ * so that from the path you read the whole board with the desk beside it —
+ * nothing stands in front of anything.
  */
 
 const CAPTION: Localized = L(
@@ -94,63 +98,20 @@ export function buildSchoolDesk(
   const WOOD = 0xb08d62;
   const DARKWOOD = 0x8a6f52;
 
-  // ---------------- desk: rounded top, apron, four turned legs.
-  const TOP_Y = 0.74;
-  const top = new RoundedBoxGeometry(1.2, 0.05, 0.72, 3, 0.015);
-  top.translate(0, TOP_Y, 0.28);
-  object.addGeometry(world.shared, top, { color: WOOD, ambient: 0.55 });
+  // ---------------- the chalkboard, set back-left and turned a touch.
+  const boardNode = new Group();
+  boardNode.position.set(-0.5, 0, -0.6);
+  boardNode.rotation.y = -0.16;
+  object.add(boardNode);
 
-  const apron = new RoundedBoxGeometry(1.06, 0.09, 0.58, 2, 0.012);
-  apron.translate(0, TOP_Y - 0.07, 0.28);
-  object.addGeometry(world.shared, apron, { color: DARKWOOD, ambient: 0.5 });
-
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      // Legs tucked under the top, tapered, never poking through it.
-      const leg = new CylinderGeometry(0.026, 0.020, TOP_Y - 0.025, 10);
-      leg.translate(sx * 0.5, (TOP_Y - 0.025) / 2, 0.28 + sz * 0.25);
-      object.addGeometry(world.shared, leg, { color: DARKWOOD, ambient: 0.48 });
-    }
-  }
-
-  // ---------------- CRT: shell, bezel, inset screen, foot. Sits ON the desk.
-  const crtBase = TOP_Y + 0.025;
-  const foot = new RoundedBoxGeometry(0.34, 0.05, 0.3, 2, 0.015);
-  foot.translate(0, crtBase + 0.025, 0.26);
-  object.addGeometry(world.shared, foot, { color: 0xcac3b2, ambient: 0.52 });
-
-  const shell = new RoundedBoxGeometry(0.46, 0.4, 0.42, 3, 0.03);
-  shell.translate(0, crtBase + 0.05 + 0.2, 0.28);
-  object.addGeometry(world.shared, shell, { color: 0xd6cfbd, ambient: 0.55 });
-
-  const bezel = new RoundedBoxGeometry(0.4, 0.34, 0.03, 2, 0.012);
-  bezel.translate(0, crtBase + 0.05 + 0.2, 0.485);
-  object.addGeometry(world.shared, bezel, { color: 0xbfb8a6, ambient: 0.5 });
-
-  const screen = new PlaneGeometry(0.33, 0.26, 3, 3);
-  screen.translate(0, crtBase + 0.05 + 0.2, 0.502);
-  object.addGeometry(world.shared, screen, {
-    map: crtScreenTexture(),
-    color: 0xffffff,
-    ambient: 0.98,
-    castShadow: false,
-  });
-
-  const keyboard = new RoundedBoxGeometry(0.42, 0.025, 0.15, 2, 0.01);
-  keyboard.rotateX(-0.06);
-  keyboard.translate(0, crtBase + 0.012, 0.55);
-  object.addGeometry(world.shared, keyboard, { color: 0xc2bba9, ambient: 0.55 });
-
-  // ---------------- chalkboard: two posts, mitred frame, inset board, tray.
   const BOARD_W = 2.4;
   const BOARD_H = 1.3;
   const BOARD_CY = 1.15;
-  const BOARD_Z = -0.55;
 
   for (const side of [-1, 1]) {
     const post = new CylinderGeometry(0.045, 0.055, BOARD_CY + BOARD_H / 2 + 0.12, 12);
-    post.translate(side * (BOARD_W / 2 - 0.1), (BOARD_CY + BOARD_H / 2 + 0.12) / 2, BOARD_Z - 0.05);
-    object.addGeometry(world.shared, post, { color: DARKWOOD, ambient: 0.48 });
+    post.translate(side * (BOARD_W / 2 - 0.1), (BOARD_CY + BOARD_H / 2 + 0.12) / 2, -0.05);
+    object.addGeometry(world.shared, post, { color: DARKWOOD, ambient: 0.48 }, boardNode);
   }
 
   // Frame: four rounded bars, corners overlapping in the same colour so the
@@ -163,22 +124,117 @@ export function buildSchoolDesk(
     [-(BOARD_W / 2 - F / 2 + 0.001), 0, F, BOARD_H + F],
   ] as Array<[number, number, number, number]>) {
     const bar = new RoundedBoxGeometry(w, hh, 0.05, 2, 0.012);
-    bar.translate(dx, BOARD_CY + dy, BOARD_Z);
-    object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.5 });
+    bar.translate(dx, BOARD_CY + dy, 0);
+    object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.5 }, boardNode);
   }
 
-  const board = new PlaneGeometry(BOARD_W - F, BOARD_H - F, 8, 5);
-  board.translate(0, BOARD_CY, BOARD_Z + 0.026);
-  object.addGeometry(world.shared, board, {
-    map: chalkboardTexture(),
-    color: 0xffffff,
-    ambient: 0.92,
-    castShadow: false,
-  });
+  // The board is TWO single-sided planes, back to back: chalk facing the
+  // path, panelling facing away, edges hidden inside the frame. Never a
+  // solid slab behind the chalk: under the Möbius warp a coarse slab face
+  // rasterises as a chord that bows THROUGH a finer plane millimetres in
+  // front of it — a dark blot in the middle of the board that grows with
+  // viewing distance. Opposite-facing planes cannot fight; whichever side
+  // you are on, the other is backface-culled.
+  // Both planes DO cast (castShadow defaults on): the depth twins live on the
+  // shadow layer, invisible to the main camera, so they cannot re-create the
+  // poke-through — but without them the board would throw a hollow, frame-
+  // only shadow on the grass. Whichever plane faces the light rasterises
+  // into the map; the other is backface-culled there, harmlessly.
+  const chalkFace = new PlaneGeometry(BOARD_W - F, BOARD_H - F, 8, 5);
+  chalkFace.translate(0, BOARD_CY, 0.012);
+  object.addGeometry(
+    world.shared,
+    chalkFace,
+    {
+      map: chalkboardTexture(),
+      color: 0xffffff,
+      ambient: 0.92,
+      receiveShadow: false,
+    },
+    boardNode,
+  );
+
+  const backPanel = new PlaneGeometry(BOARD_W - F, BOARD_H - F, 8, 5);
+  backPanel.rotateY(Math.PI);
+  backPanel.translate(0, BOARD_CY, -0.012);
+  object.addGeometry(
+    world.shared,
+    backPanel,
+    { color: 0x6b6357, ambient: 0.5, receiveShadow: false },
+    boardNode,
+  );
 
   const tray = new RoundedBoxGeometry(BOARD_W * 0.55, 0.03, 0.08, 2, 0.01);
-  tray.translate(0, BOARD_CY - BOARD_H / 2 - 0.055, BOARD_Z + 0.05);
-  object.addGeometry(world.shared, tray, { color: DARKWOOD, ambient: 0.5 });
+  tray.translate(0, BOARD_CY - BOARD_H / 2 - 0.055, 0.05);
+  object.addGeometry(world.shared, tray, { color: DARKWOOD, ambient: 0.5 }, boardNode);
+
+  // ---------------- the desk, forward-right and angled the other way, so it
+  // presents its CRT without covering a single word of chalk.
+  const deskNode = new Group();
+  // Far enough right that the CRT clears the board's right edge dead-on:
+  // board spans x -1.7..0.7, the CRT sits at x ≈ 0.93.
+  deskNode.position.set(1.17, 0, 0.35);
+  deskNode.rotation.y = 0.5;
+  object.add(deskNode);
+
+  const TOP_Y = 0.74;
+  const top = new RoundedBoxGeometry(1.2, 0.05, 0.72, 3, 0.015);
+  top.translate(0, TOP_Y, 0);
+  object.addGeometry(world.shared, top, { color: WOOD, ambient: 0.55 }, deskNode);
+
+  const apron = new RoundedBoxGeometry(1.06, 0.09, 0.58, 2, 0.012);
+  apron.translate(0, TOP_Y - 0.07, 0);
+  object.addGeometry(world.shared, apron, { color: DARKWOOD, ambient: 0.5 }, deskNode);
+
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      // Legs tucked under the top, tapered, never poking through it.
+      const leg = new CylinderGeometry(0.026, 0.020, TOP_Y - 0.025, 10);
+      leg.translate(sx * 0.5, (TOP_Y - 0.025) / 2, sz * 0.25);
+      object.addGeometry(world.shared, leg, { color: DARKWOOD, ambient: 0.48 }, deskNode);
+    }
+  }
+
+  // CRT on the desk's left half, angled its own few degrees.
+  const crtNode = new Group();
+  crtNode.position.set(-0.24, 0, -0.02);
+  crtNode.rotation.y = -0.2;
+  deskNode.add(crtNode);
+
+  const crtBase = TOP_Y + 0.025;
+  const foot = new RoundedBoxGeometry(0.34, 0.05, 0.3, 2, 0.015);
+  foot.translate(0, crtBase + 0.025, 0);
+  object.addGeometry(world.shared, foot, { color: 0xcac3b2, ambient: 0.52 }, crtNode);
+
+  const shell = new RoundedBoxGeometry(0.46, 0.4, 0.42, 3, 0.03);
+  shell.translate(0, crtBase + 0.05 + 0.2, 0.02);
+  object.addGeometry(world.shared, shell, { color: 0xd6cfbd, ambient: 0.55 }, crtNode);
+
+  const bezel = new RoundedBoxGeometry(0.4, 0.34, 0.03, 2, 0.012);
+  bezel.translate(0, crtBase + 0.05 + 0.2, 0.225);
+  object.addGeometry(world.shared, bezel, { color: 0xbfb8a6, ambient: 0.5 }, crtNode);
+
+  const screen = new PlaneGeometry(0.33, 0.26, 3, 3);
+  screen.translate(0, crtBase + 0.05 + 0.2, 0.242);
+  object.addGeometry(
+    world.shared,
+    screen,
+    {
+      map: crtScreenTexture(),
+      color: 0xffffff,
+      ambient: 0.98,
+      castShadow: false,
+      receiveShadow: false,
+    },
+    crtNode,
+  );
+
+  // Keyboard on the desk's right half, in front of nobody.
+  const keyboard = new RoundedBoxGeometry(0.42, 0.025, 0.15, 2, 0.01);
+  keyboard.rotateX(-0.06);
+  keyboard.rotateY(0.12);
+  keyboard.translate(0.3, TOP_Y + 0.037, 0.12);
+  object.addGeometry(world.shared, keyboard, { color: 0xc2bba9, ambient: 0.55 }, deskNode);
 
   world.add(object);
   return object;

@@ -50,6 +50,7 @@ export function buildSign(
     color: 0xffffff,
     ambient: 0.9,
     side: DoubleSide,
+    receiveShadow: false,
   });
 
   world.add(object);

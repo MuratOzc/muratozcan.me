@@ -1,8 +1,8 @@
 import { type HyperObject, type HyperWorld } from '../engine';
 import { L } from '../content/i18n';
-import { facePath, placeAlongPath, units, type Poi } from './placement';
+import { units, type Poi } from './placement';
 import { buildChessTable } from './props/chess';
-import { buildTriangle } from './props/triangle';
+import { buildTriangle, triangleCenter } from './props/triangle';
 
 /**
  * Things that live OFF the path.
@@ -18,17 +18,19 @@ export interface Landmarks {
   pois: Poi[];
 }
 
-/** The chess table's spot: left lawn, between the backend and frontend bays. */
-const CHESS_AT = 24.5;
-const CHESS_LATERAL = -9;
-
 export function buildLandmarks(world: HyperWorld): Landmarks {
   const objects: HyperObject[] = [];
   const pois: Poi[] = [];
 
-  // ---- the chess table
-  const chessGV = placeAlongPath(units(CHESS_AT), units(CHESS_LATERAL));
-  objects.push(buildChessTable(world, chessGV, facePath(CHESS_AT, CHESS_LATERAL)));
+  // ---- the triangle with three right angles
+  const triangle = buildTriangle(world);
+  objects.push(...triangle.objects);
+  pois.push(triangle.poi);
+
+  // ---- the chess table, dead centre of the triangle: wander in past the
+  // painted lines and there is a game waiting for you, already lost.
+  const centre = triangleCenter();
+  objects.push(buildChessTable(world, centre.gv, centre.yaw));
   pois.push({
     id: 'chess',
     title: L('Özcan – Carlsen, 1–0', 'Özcan – Carlsen, 1–0'),
@@ -36,14 +38,9 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
       "Scholar's mate. Four moves. He never saw it coming. (Reconstruction; slightly aspirational.)",
       'Çoban matı. Dört hamle. Ne olduğunu anlayamadı bile. (Temsilîdir; biraz iyimserdir.)',
     ),
-    gv: chessGV,
+    gv: centre.gv,
     radius: units(5),
   });
-
-  // ---- the triangle with three right angles
-  const triangle = buildTriangle(world);
-  objects.push(...triangle.objects);
-  pois.push(triangle.poi);
 
   return { objects, pois };
 }

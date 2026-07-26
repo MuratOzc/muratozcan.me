@@ -138,11 +138,17 @@ function pieceGeometry(kind: PieceKind): BufferGeometry[] {
   }
 }
 
-function sideGeometry(pieces: Array<[PieceKind, number, number]>): BufferGeometry {
+function sideGeometry(
+  pieces: Array<[PieceKind, number, number]>,
+  facing: 1 | -1,
+): BufferGeometry {
   const parts: BufferGeometry[] = [];
   for (const [kind, file, rank] of pieces) {
     for (const g of pieceGeometry(kind)) {
-      // White plays toward -z (the path side); a1 is near-left from white.
+      // Each side faces its opponent — matters for the knights, whose heads
+      // would otherwise stare out of the back rank.
+      if (facing === -1) g.rotateY(Math.PI);
+      // White plays toward -z; a1 is near-left from white.
       g.translate((file - 3.5) * SQ, BOARD_Y, (3.5 - rank) * SQ);
       parts.push(g);
     }
@@ -230,15 +236,19 @@ export function buildChessTable(
     color: 0xffffff,
     ambient: 0.88,
     castShadow: false,
+    receiveShadow: false,
   });
 
-  object.addGeometry(world.shared, sideGeometry(WHITE), {
+  // White faces -z, black faces +z, toward each other across the board.
+  object.addGeometry(world.shared, sideGeometry(WHITE, 1), {
     color: 0xf2ead6,
     ambient: 0.52,
   });
-  object.addGeometry(world.shared, sideGeometry(BLACK), {
-    color: 0x4a4540,
-    ambient: 0.42,
+  // "Black" is a readable slate gray — true black swallows every contour
+  // this lighting model has.
+  object.addGeometry(world.shared, sideGeometry(BLACK, -1), {
+    color: 0x707782,
+    ambient: 0.48,
   });
 
   // ---- two turned stools: the game is over, but the seats stay out.

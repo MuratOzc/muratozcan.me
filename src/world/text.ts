@@ -1,4 +1,10 @@
-import { CanvasTexture, LinearFilter, SRGBColorSpace, type Texture } from 'three';
+import {
+  CanvasTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  SRGBColorSpace,
+  type Texture,
+} from 'three';
 import { onLangChange, t, upper, type Localized } from '../content/i18n';
 
 /**
@@ -20,7 +26,9 @@ export function localizedCanvasTexture(
 
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
-  tex.minFilter = LinearFilter;
+  // Mipmapped, so text stays legible (rather than shimmering away) at the
+  // distances this world routinely shows things from.
+  tex.minFilter = LinearMipmapLinearFilter;
   tex.magFilter = LinearFilter;
   tex.anisotropy = 8;
 
@@ -221,7 +229,7 @@ export function makeTextTexture(text: string, opts: TextTextureOptions = {}): Te
 
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
-  tex.minFilter = LinearFilter;
+  tex.minFilter = LinearMipmapLinearFilter;
   tex.magFilter = LinearFilter;
   tex.anisotropy = 8;
   return tex;

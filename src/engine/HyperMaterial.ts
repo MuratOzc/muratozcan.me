@@ -78,6 +78,14 @@ export interface HyperMaterialOptions {
    * ground (path markings, plaques) a shadow caster is pure cost.
    */
   castShadow?: boolean;
+  /**
+   * Set false to skip shadow sampling entirely. Decal faces — text planes
+   * sitting millimetres proud of solid geometry — must opt out: the shadow
+   * map cannot resolve the sliver of depth between decal and backing, and
+   * the backing falsely shadows the decal (a dark disc that grows with
+   * viewing distance, centred wherever the surface is nearest the viewer).
+   */
+  receiveShadow?: boolean;
   mottleScale?: number;
   mottleAmount?: number;
   side?: Side;
@@ -101,7 +109,9 @@ function build(
   if (opts.map) defines.USE_MAP = '1';
   // The far hemisphere is beyond the shadow map's reach (and mostly fog), so
   // only near-side materials pay for the sampling.
-  if (shadowsEnabled && hemisphere !== 'top') defines.USE_SHADOWMAP = '1';
+  if (shadowsEnabled && hemisphere !== 'top' && opts.receiveShadow !== false) {
+    defines.USE_SHADOWMAP = '1';
+  }
 
   const mat = new ShaderMaterial({
     glslVersion: GLSL3,

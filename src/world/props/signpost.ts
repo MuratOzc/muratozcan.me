@@ -64,6 +64,7 @@ export function buildSignpost(
       ambient: 0.9,
       alphaTest: 0.3,
       castShadow: false,
+      receiveShadow: false,
     });
 
     // The strike: a bar floating just in front of the text.

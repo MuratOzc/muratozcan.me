@@ -70,6 +70,17 @@ function yawToward(from: Vector3, to: Vector3): number {
   return Math.atan2(-local.x, -local.z);
 }
 
+/**
+ * The centre of the triangle — by the corner symmetry this is exactly the
+ * "right pole" (1,0,0), a quarter turn off the path. Anything placed here is
+ * equidistant from all three corners. The yaw faces the first corner, which
+ * is also roughly back toward the path.
+ */
+export function triangleCenter(): { gv: ReturnType<typeof placeOnGround>; yaw: number } {
+  const centroid = new Vector3(1, 0, 0);
+  return { gv: groundGV(centroid), yaw: yawToward(centroid, corners()[0]) };
+}
+
 export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi: Poi } {
   const objects: HyperObject[] = [];
   const C = corners();
