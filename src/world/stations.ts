@@ -1,8 +1,9 @@
 import { BoxGeometry, DoubleSide, PlaneGeometry } from 'three';
-import { HyperObject, type HyperWorld } from '../engine';
+import { HyperObject, type GyroVector, type HyperWorld } from '../engine';
 import { STATIONS, type Station } from '../content/stations';
 import { pathYaw, placeAlongPath, units, type Poi } from './placement';
 import { makeSignTexture } from './text';
+import { buildCameraMast, buildLoneCamera, type Watcher } from './props/cameras';
 
 /**
  * Stations, laid out as an exhibition.
@@ -80,10 +81,25 @@ function buildSign(world: HyperWorld, s: Station): { object: HyperObject; poi: P
   };
 }
 
-function buildExhibit(world: HyperWorld, s: Station): HyperObject {
-  const lateral = Math.sign(s.lateral) * EXHIBIT_LATERAL;
-  const object = new HyperObject(placeAlongPath(units(s.at), units(lateral)));
-  object.rotation.y = facePath(s.at, lateral);
+/**
+ * Real exhibits, keyed by station id. Anything not listed falls back to the
+ * placeholder pad and block, so stations can be built one at a time without
+ * the world losing its shape in between.
+ */
+const EXHIBITS: Record<
+  string,
+  (world: HyperWorld, at: GyroVector, yaw: number, out: Built) => void
+> = {
+  security(world, at, yaw, out) {
+    const mast = buildCameraMast(world, at, yaw);
+    out.objects.push(mast.object);
+    out.watchers.push(...mast.watchers);
+  },
+};
+
+function buildPlaceholderExhibit(world: HyperWorld, at: GyroVector, yaw: number): HyperObject {
+  const object = new HyperObject(at);
+  object.rotation.y = yaw;
 
   const pad = new BoxGeometry(3.2, 0.12, 3.2, 3, 1, 3);
   pad.translate(0, 0.06, 0);
@@ -99,18 +115,44 @@ function buildExhibit(world: HyperWorld, s: Station): HyperObject {
   return object;
 }
 
-export interface BuiltStations {
+interface Built {
   objects: HyperObject[];
   pois: Poi[];
+  watchers: Watcher[];
 }
 
-export function buildStations(world: HyperWorld): BuiltStations {
-  const objects: HyperObject[] = [];
-  const pois: Poi[] = [];
+export type BuiltStations = Built;
+
+export function buildStations(world: HyperWorld): Built {
+  const out: Built = { objects: [], pois: [], watchers: [] };
+
   for (const s of STATIONS) {
     const { object, poi } = buildSign(world, s);
-    objects.push(object, buildExhibit(world, s));
-    pois.push(poi);
+    out.objects.push(object);
+    out.pois.push(poi);
+
+    const lateral = Math.sign(s.lateral) * EXHIBIT_LATERAL;
+    const at = placeAlongPath(units(s.at), units(lateral));
+    const yaw = facePath(s.at, lateral);
+
+    const custom = EXHIBITS[s.id];
+    if (custom) custom(world, at, yaw, out);
+    else out.objects.push(buildPlaceholderExhibit(world, at, yaw));
   }
-  return { objects, pois };
+
+  // Cameras along the whole route, not only at the security station. Small and
+  // easy to miss walking out; the intent is that you notice them coming back
+  // and realise they have been following you the entire way.
+  const SENTRIES: Array<[number, number]> = [
+    [11.5, -7.5], [19.0, 7.8], [26.5, -8.2], [33.5, 8.0],
+    [41.0, -7.6], [46.5, 8.4], [53.0, -7.9],
+  ];
+  for (const [at, lateral] of SENTRIES) {
+    const gv = placeAlongPath(units(at), units(lateral));
+    const cam = buildLoneCamera(world, gv, facePath(at, lateral));
+    out.objects.push(cam.object);
+    out.watchers.push(cam.watcher);
+  }
+
+  return out;
 }

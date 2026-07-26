@@ -1,4 +1,4 @@
-import { BufferGeometry, Group, Mesh } from 'three';
+import { BufferGeometry, Group, Mesh, type Object3D } from 'three';
 import { GyroVector } from './math/gyrovector';
 import {
   createHyperMaterials,
@@ -36,10 +36,17 @@ export class HyperObject extends Group {
    * BufferGeometry — one per hemisphere pass. That doubling is not optional;
    * see hyperCore.ts.
    */
+  /**
+   * @param parent Attach under a child node instead of the root. The shader
+   *   reads `modelMatrix`, which is the full world matrix, so a nested node's
+   *   own rotation flows through automatically — that is how a part can move
+   *   independently of the object it belongs to.
+   */
   addGeometry(
     shared: SharedUniforms,
     geometry: BufferGeometry,
     opts: HyperMaterialOptions = {},
+    parent?: Object3D,
   ): HyperMaterial[] {
     const mats = createHyperMaterials(shared, {
       tanKHeight: this.useTanKHeight,
@@ -51,7 +58,7 @@ export class HyperObject extends Group {
       // plainly visible. HyperEngine disables culling outright in spherical
       // space for the same reason.
       mesh.frustumCulled = false;
-      this.add(mesh);
+      (parent ?? this).add(mesh);
     }
     this.materials.push(...mats);
     return mats;

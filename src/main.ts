@@ -139,6 +139,8 @@ addEventListener('resize', () => world.resize());
   world,
   controls,
   pois,
+  stations,
+  skeleton,
   GyroVector,
   Vector3,
   HyperObject,
@@ -200,6 +202,7 @@ function frame(now: number) {
   }
 
   controls.update(dt);
+  for (const w of stations.watchers) w.update(world.worldGV, dt);
   world.render();
   panel.update(pois, world.worldGV, dt);
 
