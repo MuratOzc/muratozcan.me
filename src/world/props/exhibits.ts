@@ -5,6 +5,7 @@ import { buildMailbox } from './mailbox';
 import { buildSchoolDesk } from './schoolDesk';
 import { buildSignpost } from './signpost';
 import { buildVault } from './vault';
+import { buildWorldModel } from './worldModel';
 
 /**
  * Everything a station build can contribute to the world.
@@ -13,6 +14,8 @@ export interface Built {
   objects: HyperObject[];
   pois: Poi[];
   watchers: Watcher[];
+  /** Called every frame; how exhibits animate. */
+  tickers: Array<(worldGV: GyroVector, dt: number) => void>;
 }
 
 /**
@@ -32,6 +35,11 @@ export const EXHIBITS: Record<
   },
   origin(world, at, yaw, out) {
     out.objects.push(buildSchoolDesk(world, at, yaw));
+  },
+  architecture(world, at, yaw, out) {
+    const model = buildWorldModel(world, at, yaw);
+    out.objects.push(model.object);
+    out.tickers.push(model.tick);
   },
   security(world, at, yaw, out) {
     const mast = buildCameraMast(world, at, yaw);

@@ -229,6 +229,7 @@ function frame(now: number) {
 
   controls.update(dt);
   for (const w of stations.watchers) w.update(world.worldGV, dt);
+  for (const t of stations.tickers) t(world.worldGV, dt);
   world.render();
   panel.update(pois, world.worldGV, dt);
 

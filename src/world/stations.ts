@@ -30,7 +30,7 @@ const EXHIBIT_LATERAL = 5.0;
 export type BuiltStations = Built;
 
 export function buildStations(world: HyperWorld): Built {
-  const out: Built = { objects: [], pois: [], watchers: [] };
+  const out: Built = { objects: [], pois: [], watchers: [], tickers: [] };
 
   for (const s of STATIONS) {
     const { object, poi } = buildSign(world, s);

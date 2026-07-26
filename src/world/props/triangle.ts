@@ -26,6 +26,12 @@ import { makeTextTexture } from '../text';
 const THETA = Math.acos(1 / Math.sqrt(3));
 const PHI0 = -1.7;
 
+/** The triangle's corners as ground-sphere unit vectors. Also used by the
+ *  architecture station's world model to draw the triangle on its globe. */
+export function triangleCorners(): Vector3[] {
+  return corners();
+}
+
 function corners(): Vector3[] {
   const out: Vector3[] = [];
   for (let k = 0; k < 3; k++) {
