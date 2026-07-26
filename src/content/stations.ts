@@ -99,7 +99,10 @@ const DEFS: StationDef[] = [
   {
     id: 'infrastructure',
     title: L('Infrastructure', 'Altyapı'),
-    object: L('a rack: two Windows, one penguin', 'bir kabin: iki Windows, bir penguen'),
+    object: L(
+      'an open rack: two Windows, one penguin, cables into the earth',
+      'açık kabin: iki Windows, bir penguen, toprağa inen kablolar',
+    ),
     body: L(
       'Three dedicated machines — two Windows, one Linux. Web server, backups, monitoring: set up by me, run by me. No cloud between me and the metal. When something breaks at 3 a.m., the person it wakes is also the person who can fix it.',
       'Üç fiziksel sunucu — ikisi Windows, biri Linux. Web sunucusu, yedekler, izleme: hepsini ben kurdum, ben işletiyorum. Metalle aramda bulut yok. Gece üçte bir şey bozulursa, uyandırdığı kişiyle tamir edebilen kişi aynı.',
