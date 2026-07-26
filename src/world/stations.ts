@@ -143,9 +143,12 @@ export function buildStations(world: HyperWorld): Built {
   // Cameras along the whole route, not only at the security station. Small and
   // easy to miss walking out; the intent is that you notice them coming back
   // and realise they have been following you the entire way.
+  // Two only. Any more and they stop reading as a detail you missed and start
+  // reading as set dressing. One near the start and one near the end means
+  // both get passed twice.
   const SENTRIES: Array<[number, number]> = [
-    [11.5, -7.5], [19.0, 7.8], [26.5, -8.2], [33.5, 8.0],
-    [41.0, -7.6], [46.5, 8.4], [53.0, -7.9],
+    [13.0, -7.2],
+    [51.0, 7.6],
   ];
   for (const [at, lateral] of SENTRIES) {
     const gv = placeAlongPath(units(at), units(lateral));

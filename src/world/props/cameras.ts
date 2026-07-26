@@ -1,5 +1,5 @@
 import { BoxGeometry, Group, Vector3 } from 'three';
-import { GyroVector, HyperObject, type HyperWorld } from '../../engine';
+import { GyroVector, HyperObject, poincareToUnit, type HyperWorld } from '../../engine';
 
 /**
  * Security cameras that watch you.
@@ -47,10 +47,12 @@ export class Watcher {
   private yaw = 0;
   private pitch = 0;
   private readonly local = new Vector3();
+  private readonly unit = new Vector3();
+  private readonly mount = new Vector3();
 
   constructor(
     private readonly object: HyperObject,
-    /** Yaw of the pole itself, which the head's rotation is relative to. */
+    /** Yaw of the pole and arm the head hangs from, which its rotation is relative to. */
     private readonly baseYaw: number,
   ) {
     this.head.rotation.order = 'YXZ';
@@ -59,15 +61,30 @@ export class Watcher {
   update(worldGV: GyroVector, dt: number): void {
     // Compose the camera's placement with the world transform, then invert:
     // that maps the viewer (who sits permanently at the origin) into this
-    // camera's own frame.
+    // object's own frame.
     const composed = this.object.localGV.add(worldGV);
     composed.inverse().point(this.local);
 
-    const horizontal = Math.hypot(this.local.x, this.local.z);
-    // The head hangs under a node that already carries the pole's yaw, so
-    // subtract it to get a rotation relative to the parent.
-    const targetYaw = Math.atan2(-this.local.x, -this.local.z) - this.baseYaw;
-    const targetPitch = Math.atan2(this.local.y, horizontal);
+    // ...but that answer is in Poincare coordinates, and the head's position on
+    // the mast is in authored units. Convert before comparing them, or the aim
+    // is off by the whole Unit -> Klein -> Poincare chain.
+    poincareToUnit(this.local, false, this.unit);
+
+    // Aim from the HEAD, not from the base of the pole. With the viewer at eye
+    // height 1 and a head three units up, using the object origin points the
+    // camera at the sky.
+    this.head.updateWorldMatrix(true, false);
+    this.head.getWorldPosition(this.mount);
+
+    const dx = this.unit.x - this.mount.x;
+    const dy = this.unit.y - this.mount.y;
+    const dz = this.unit.z - this.mount.z;
+
+    const horizontal = Math.hypot(dx, dz);
+    // The head hangs under nodes that already carry the pole and arm yaw, so
+    // subtract them to get a rotation relative to its parent.
+    const targetYaw = Math.atan2(-dx, -dz) - this.baseYaw;
+    const targetPitch = Math.atan2(dy, horizontal);
 
     const step = this.slew * dt;
     this.yaw += clampAngle(targetYaw - this.yaw) * Math.min(1, step);
