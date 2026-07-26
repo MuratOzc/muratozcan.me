@@ -95,6 +95,20 @@ export function pathYaw(along: number, lateral: number, eps = 1e-3): number {
 }
 
 /**
+ * Yaw that turns a roadside object to face the path.
+ *
+ * pathYaw aligns local -z along the direction of travel, so local +x points
+ * right. A PlaneGeometry faces +z, so it needs a further quarter turn — toward
+ * -x from the right-hand side of the path, toward +x from the left.
+ *
+ * Takes authored units (like the station tables), not radians.
+ */
+export function facePath(at: number, lateral: number): number {
+  const base = pathYaw(units(at), units(lateral));
+  return base + (lateral > 0 ? -Math.PI / 2 : Math.PI / 2);
+}
+
+/**
  * The far side of the world. A hair short of PI, because the Poincare radius
  * is infinite exactly at the antipode; the far-hemisphere pass maps this back
  * to a sane magnitude.
