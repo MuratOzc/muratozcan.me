@@ -1,5 +1,11 @@
 import { BoxGeometry, Group, Vector3 } from 'three';
-import { GyroVector, HyperObject, poincareToUnit, type HyperWorld } from '../../engine';
+import {
+  GyroVector,
+  HyperObject,
+  mobiusAdd,
+  unitToPoincare,
+  type HyperWorld,
+} from '../../engine';
 
 /**
  * Security cameras that watch you.
@@ -46,9 +52,10 @@ export class Watcher {
 
   private yaw = 0;
   private pitch = 0;
-  private readonly local = new Vector3();
-  private readonly unit = new Vector3();
+  private readonly viewer = new Vector3();
   private readonly mount = new Vector3();
+  private readonly headP = new Vector3();
+  private readonly dir = new Vector3();
 
   constructor(
     private readonly object: HyperObject,
@@ -61,24 +68,34 @@ export class Watcher {
   update(worldGV: GyroVector, dt: number): void {
     // Compose the camera's placement with the world transform, then invert:
     // that maps the viewer (who sits permanently at the origin) into this
-    // object's own frame.
+    // object's own frame, in Poincare coordinates.
     const composed = this.object.localGV.add(worldGV);
-    composed.inverse().point(this.local);
-
-    // ...but that answer is in Poincare coordinates, and the head's position on
-    // the mast is in authored units. Convert before comparing them, or the aim
-    // is off by the whole Unit -> Klein -> Poincare chain.
-    poincareToUnit(this.local, false, this.unit);
+    composed.inverse().point(this.viewer);
 
     // Aim from the HEAD, not from the base of the pole. With the viewer at eye
     // height 1 and a head three units up, using the object origin points the
     // camera at the sky.
+    //
+    // Converting to Unit coordinates to do that subtraction is a trap. Unit
+    // goes via Klein, which is the gnomonic chart: it diverges at exactly a
+    // quarter turn and INVERTS beyond it. The quarter turn is 15.7 units in a
+    // 62.8-unit world, so anything further than that aimed backwards, and
+    // crossing the boundary whipped the head through 180 degrees.
+    //
+    // Staying in Poincare avoids all of it. The head is only metres from the
+    // object origin — far inside the quarter turn — so lifting THAT through
+    // Unit is safe, and the direction to the viewer is then the Mobius
+    // difference, which is well defined at every distance short of the
+    // antipode.
     this.head.updateWorldMatrix(true, false);
     this.head.getWorldPosition(this.mount);
+    unitToPoincare(this.mount, false, this.headP);
 
-    const dx = this.unit.x - this.mount.x;
-    const dy = this.unit.y - this.mount.y;
-    const dz = this.unit.z - this.mount.z;
+    mobiusAdd(this.headP.negate(), this.viewer, this.dir);
+
+    const dx = this.dir.x;
+    const dy = this.dir.y;
+    const dz = this.dir.z;
 
     const horizontal = Math.hypot(dx, dz);
     // The head hangs under nodes that already carry the pole and arm yaw, so

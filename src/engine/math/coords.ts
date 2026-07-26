@@ -26,6 +26,23 @@ export function kleinToPoincare(p: Vector3, out = new Vector3()): Vector3 {
   return out.copy(p).divideScalar(s);
 }
 
+/**
+ * WARNING — spherically, this is only valid within a quarter turn.
+ *
+ * Klein is the gnomonic chart. In spherical space the denominator hits zero at
+ * |p| = 1, which is a geodesic distance of exactly PI/2, and goes NEGATIVE
+ * beyond it — so the result diverges at the quarter turn and then comes back
+ * inverted. A point 100 degrees away converts to a Klein point pointing the
+ * opposite direction.
+ *
+ * That makes it unsafe for anything measuring direction or distance to
+ * arbitrary points in the world: at unitScale 0.1 the quarter turn is only
+ * 15.7 units out of 62.8, so most of the world is past it.
+ *
+ * For a direction from one point to another, use the Möbius difference
+ * instead — `mobiusAdd(a.negate(), b)` — which stays well defined all the way
+ * to the antipode.
+ */
 export function poincareToKlein(p: Vector3, out = new Vector3()): Vector3 {
   if (HM.K === 0) return out.copy(p);
   return out.copy(p).multiplyScalar(2 / (1 - HM.K * p.lengthSq()));
