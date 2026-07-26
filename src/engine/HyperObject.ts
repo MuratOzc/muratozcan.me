@@ -2,10 +2,17 @@ import { BufferGeometry, Group, Mesh, type Object3D } from 'three';
 import { GyroVector } from './math/gyrovector';
 import {
   createHyperMaterials,
+  createShadowDepthMaterial,
   type HyperMaterial,
   type HyperMaterialOptions,
   type SharedUniforms,
 } from './HyperMaterial';
+
+/**
+ * Depth-pass meshes live on this layer: invisible to the main camera, and the
+ * only thing the light camera renders.
+ */
+export const SHADOW_LAYER = 1;
 
 /**
  * Anything that lives in curved space.
@@ -61,6 +68,22 @@ export class HyperObject extends Group {
       (parent ?? this).add(mesh);
     }
     this.materials.push(...mats);
+
+    // The shadow-pass twin: same geometry, same parent (so animated child
+    // nodes cast moving shadows via the inherited modelMatrix), but a
+    // depth-only material and a layer the main camera never renders.
+    if (shared.shadowsEnabled) {
+      const depthMat = createShadowDepthMaterial(shared, {
+        tanKHeight: this.useTanKHeight,
+        ...opts,
+      });
+      const depthMesh = new Mesh(geometry, depthMat);
+      depthMesh.frustumCulled = false;
+      depthMesh.layers.set(SHADOW_LAYER);
+      (parent ?? this).add(depthMesh);
+      this.materials.push(depthMat);
+    }
+
     return mats;
   }
 
@@ -75,8 +98,11 @@ export class HyperObject extends Group {
     for (const mat of this.materials) {
       mat.uniforms.uHyperPos.value.copy(composed.vec);
       mat.uniforms.uHyperRot.value.copy(rot);
-      mat.uniforms.uStaticPos.value.copy(this.localGV.vec);
-      mat.uniforms.uStaticRot.value.copy(staticRot);
+      // Depth-pass materials have no static placement uniforms.
+      if (mat.uniforms.uStaticPos) {
+        mat.uniforms.uStaticPos.value.copy(this.localGV.vec);
+        mat.uniforms.uStaticRot.value.copy(staticRot);
+      }
     }
   }
 

@@ -21,6 +21,28 @@
  *
  * This is why naive single-pass approaches fall apart past the quarter turn.
  * The fix is not a better projection, it is a second draw.
+ *
+ * ---------------------------------------------------------------------------
+ * SHADOWS IN THE CHART
+ * ---------------------------------------------------------------------------
+ * Lighting in this engine is deliberately non-geodesic: uLightDir is a fixed
+ * direction in the viewer's Poincare chart, exactly HyperEngine's cheat. That
+ * cheat is what makes real shadow mapping possible. Light "rays" are straight
+ * lines in chart space, so an ordinary orthographic depth map rendered IN THAT
+ * CHART agrees with the diffuse term by construction — shadows fall exactly
+ * where dot(n, uLightDir) says the light comes from.
+ *
+ * The depth pass reuses the identical vertex warp (same Möbius composition,
+ * same tessellated triangles), only projected by the light's camera instead of
+ * the viewer's. Any mismatch between the two warps would show up as acne, so
+ * both shaders are assembled from the same source chunks below.
+ *
+ * The chart moves when the viewer does, so the map is re-rendered every frame
+ * — this also means the light camera can stay centred on the origin, where the
+ * viewer permanently sits and where shadow detail matters most. Geometry near
+ * the antipode has enormous chart coordinates; a triangle straddling the light
+ * frustum could rasterise a phantom occluder straight through it, so the depth
+ * pass discards fragments whose interpolated w_dot is beyond the shadow range.
  */
 
 export const HYPER_COMMON = /* glsl */ `
@@ -35,17 +57,10 @@ float tan_k(float x) {
 }
 `;
 
-export const HYPER_VERTEX = /* glsl */ `
+/** Uniforms and functions every warping vertex shader needs. */
+const HYPER_WARP = /* glsl */ `
 uniform vec3 uHyperPos;
 uniform mat3 uHyperRot;
-uniform vec3 uStaticPos;
-uniform mat3 uStaticRot;
-
-out vec3 vNormal;
-out vec2 vUv;
-out float vWDot;
-out vec3 vLocalPos;
-out vec4 vSphere;
 
 vec3 qtransform(vec4 q, vec3 v) {
   vec3 t = cross(q.xyz, v);
@@ -63,13 +78,13 @@ vec3 mobius_add(vec3 b, vec3 a, inout vec3 n) {
   n = qtransform(normalize(vec4(c, d)), n);
   return (t * d + cross(c, t)) / (d * d + dot(c, c));
 }
+`;
 
-void main() {
-  vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
-  vec3 n = normalize(mat3(modelMatrix) * normal);
-  vUv = uv;
-  vLocalPos = position;
-
+/**
+ * Unit -> Poincare lift, operating on `p`. Shared verbatim between the display
+ * and shadow-depth vertex shaders — they must warp identically.
+ */
+const HYPER_LIFT = /* glsl */ `
   // Unit -> Klein
   p *= uUnitScale;
   if (uTanKHeight > 0.5) {
@@ -79,7 +94,29 @@ void main() {
   // Klein -> Poincare. Written as K*(K + dot) rather than 1 + K*dot so that
   // K = 0 falls out as an exact identity with no branch.
   p /= sqrt(uK * (uK + dot(p, p))) + 1.0;
+`;
 
+export const HYPER_VERTEX = HYPER_WARP + /* glsl */ `
+uniform vec3 uStaticPos;
+uniform mat3 uStaticRot;
+
+#ifdef USE_SHADOWMAP
+uniform mat4 uShadowMatrix;
+out vec4 vShadowCoord;
+#endif
+
+out vec3 vNormal;
+out vec2 vUv;
+out float vWDot;
+out vec3 vLocalPos;
+out vec4 vSphere;
+
+void main() {
+  vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
+  vec3 n = normalize(mat3(modelMatrix) * normal);
+  vUv = uv;
+  vLocalPos = position;
+` + HYPER_LIFT + /* glsl */ `
   // A world coordinate that does not move when the viewer does.
   //
   // uStaticPos/uStaticRot are the object's own placement WITHOUT the camera
@@ -106,6 +143,13 @@ void main() {
   float w_dot = dot(p, p);
   vWDot = w_dot;
 
+#ifdef USE_SHADOWMAP
+  // Light-space position, taken BEFORE the hemisphere inversion: the shadow
+  // map lives in the same chart as the lighting, and only covers the near
+  // region anyway. (Top-hemisphere materials never define USE_SHADOWMAP.)
+  vShadowCoord = uShadowMatrix * vec4(p, 1.0);
+#endif
+
   #ifdef TOP_HEMISPHERE
     // Invert through the unit sphere to render the far hemisphere.
     p /= w_dot;
@@ -120,6 +164,56 @@ void main() {
   // The camera never translates — the world moves instead — so strip any
   // translation from the view matrix and keep only its rotation.
   gl_Position = projectionMatrix * mat4(mat3(viewMatrix)) * vec4(p, w);
+}
+`;
+
+/**
+ * The shadow-depth vertex shader: the same warp, projected by the light's
+ * orthographic camera. Here `viewMatrix` belongs to the light camera and its
+ * translation is KEPT — the light sits away from the origin looking back.
+ */
+export const HYPER_DEPTH_VERTEX = HYPER_WARP + /* glsl */ `
+out vec2 vUv;
+out float vWDot;
+
+void main() {
+  vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
+  vec3 n = normalize(mat3(modelMatrix) * normal);
+  vUv = uv;
+` + HYPER_LIFT + /* glsl */ `
+  p = mobius_add(p, uHyperPos, n);
+  p = uHyperRot * p;
+
+  vWDot = dot(p, p);
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}
+`;
+
+export const HYPER_DEPTH_FRAGMENT = /* glsl */ `
+uniform float uShadowMaxWDot;
+
+#ifdef USE_MAP
+uniform sampler2D uMap;
+uniform float uAlphaTest;
+#endif
+
+in vec2 vUv;
+in float vWDot;
+
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+  // Kill far-hemisphere geometry. Its chart coordinates are enormous, and a
+  // triangle with vertices on both sides of the light frustum would otherwise
+  // rasterise a phantom occluder through the middle of the map.
+  if (vWDot > uShadowMaxWDot) discard;
+
+  // Cutout textures (signage) should cast cutout shadows, not quad shadows.
+  #ifdef USE_MAP
+    if (texture(uMap, vUv).a < uAlphaTest) discard;
+  #endif
+
+  fragColor = vec4(1.0);
 }
 `;
 
@@ -138,6 +232,16 @@ uniform float uMottleAmount;
 #ifdef USE_MAP
 uniform sampler2D uMap;
 uniform float uAlphaTest;
+#endif
+
+#ifdef USE_SHADOWMAP
+// A comparison sampler: texture() returns how much of the bilinear footprint
+// passes the depth test, so each tap is already softened in hardware.
+uniform highp sampler2DShadow uShadowMap;
+uniform float uShadowBias;
+uniform float uShadowStrength;
+uniform float uShadowTexel;
+in vec4 vShadowCoord;
 #endif
 
 in vec3 vNormal;
@@ -169,6 +273,34 @@ float fbm(vec3 p) {
   return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.17) + 0.2 * vnoise(p * 4.61);
 }
 
+#ifdef USE_SHADOWMAP
+// 1 = fully lit, 0 = fully occluded. ndl is dot(n, uLightDir), used to scale
+// the bias: grazing surfaces need more slack or they self-shadow into acne.
+float shadowFactor(float ndl) {
+  vec3 sc = vShadowCoord.xyz;
+  if (sc.z <= 0.0 || sc.z >= 1.0) return 1.0;
+
+  // Fade out toward the edge of the map so shadows dissolve with distance
+  // instead of being clipped by an invisible square.
+  vec2 edge = abs(sc.xy * 2.0 - 1.0);
+  float fade = 1.0 - smoothstep(0.7, 0.95, max(edge.x, edge.y));
+  if (fade <= 0.0) return 1.0;
+
+  float bias = uShadowBias * (0.3 + 0.7 * (1.0 - clamp(ndl, 0.0, 1.0)));
+  float z = sc.z - bias;
+
+  float lit = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      lit += texture(uShadowMap, vec3(sc.xy + vec2(float(x), float(y)) * uShadowTexel, z));
+    }
+  }
+  lit /= 9.0;
+
+  return 1.0 - fade * uShadowStrength * (1.0 - lit);
+}
+#endif
+
 void main() {
   // w_dot is strictly positive, but MSAA can extrapolate it negative at edges,
   // so clamp before using it. (CodeParade hit this too.)
@@ -195,7 +327,15 @@ void main() {
   }
 
   vec3 n = normalize(vNormal);
-  float diffuse = clamp(0.5 + 0.5 * dot(n, uLightDir), 0.0, 1.0);
+  float ndl = dot(n, uLightDir);
+  float diffuse = clamp(0.5 + 0.5 * ndl, 0.0, 1.0);
+
+  // Shadow scales the DIRECT light only; the ambient floor below is what a
+  // fully shadowed surface is left with.
+  #ifdef USE_SHADOWMAP
+    diffuse *= shadowFactor(ndl);
+  #endif
+
   diffuse = uAmbient + (1.0 - uAmbient) * diffuse;
 
   vec3 base = uColor;

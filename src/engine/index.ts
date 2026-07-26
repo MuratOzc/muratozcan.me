@@ -36,10 +36,11 @@ export type { TestResult } from './math/selftest';
 
 export { HyperWorld } from './HyperWorld';
 export type { HyperWorldOptions } from './HyperWorld';
-export { HyperObject } from './HyperObject';
+export { HyperObject, SHADOW_LAYER } from './HyperObject';
 export { Controls } from './Controls';
 export {
   createHyperMaterials,
+  createShadowDepthMaterial,
   createSharedUniforms,
 } from './HyperMaterial';
 export type {
