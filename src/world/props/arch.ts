@@ -1,7 +1,8 @@
 import { BoxGeometry, PlaneGeometry } from 'three';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { L } from '../../content/i18n';
 import { units, type Poi } from '../placement';
-import { makeTextTexture } from '../text';
+import { makeLocalizedTextTexture } from '../text';
 
 /**
  * The WELCOME arch: two posts, a lintel, and the sign as a cutout texture.
@@ -33,7 +34,10 @@ export function buildArch(
   const signGeo = new PlaneGeometry(SPAN * 2, 0.5, 8, 2);
   signGeo.translate(0, POST_H + 0.17, 0.16);
   arch.addGeometry(world.shared, signGeo, {
-    map: makeTextTexture('WELCOME', { letterSpacing: 18, color: '#2b3138' }),
+    map: makeLocalizedTextTexture(L('WELCOME', 'HOŞ GELDİNİZ'), {
+      letterSpacing: 18,
+      color: '#2b3138',
+    }),
     color: 0xffffff,
     ambient: 0.95,
     alphaTest: 0.35,
@@ -44,8 +48,11 @@ export function buildArch(
     object: arch,
     poi: {
       id: 'arch',
-      title: 'muratozcan.me',
-      body: 'Follow the path. It goes all the way round and comes back here.',
+      title: L('muratozcan.me', 'muratozcan.me'),
+      body: L(
+        'Follow the path. It goes all the way round and comes back here.',
+        'Yolu takip edin. Dünyayı dolaşıp buraya geri gelir.',
+      ),
       gv: at,
       radius: units(4),
     },

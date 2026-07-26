@@ -73,6 +73,11 @@ export interface HyperMaterialOptions {
   map?: Texture;
   /** Alpha below this is discarded. */
   alphaTest?: number;
+  /**
+   * Set false to skip the shadow-depth twin. For flat paint lying on the
+   * ground (path markings, plaques) a shadow caster is pure cost.
+   */
+  castShadow?: boolean;
   mottleScale?: number;
   mottleAmount?: number;
   side?: Side;

@@ -18,7 +18,9 @@ import {
   toUnits,
   type Poi,
 } from './world/placement';
+import { lang, onLangChange, setLang, type Lang } from './content/i18n';
 import { ProximityPanel } from './world/panel';
+import { buildLandmarks } from './world/landmarks';
 import { buildFigure, buildSkeleton } from './world/skeleton';
 import { buildStations } from './world/stations';
 import { makeTextTexture } from './world/text';
@@ -96,8 +98,25 @@ for (const [bearing, distance] of GROUND_FACES) {
 const panel = new ProximityPanel();
 const skeleton = buildSkeleton(world);
 const stations = buildStations(world);
+const landmarks = buildLandmarks(world);
 buildFigure(world).catch((e) => console.error('figure failed to load:', e));
-const pois: Poi[] = [...skeleton.pois, ...stations.pois];
+const pois: Poi[] = [...skeleton.pois, ...stations.pois, ...landmarks.pois];
+
+// ------------------------------------------------------------------ language
+// Two languages, one world: the toggle repaints every canvas texture and the
+// proximity panel through the i18n listeners.
+const langEl = document.getElementById('lang') as HTMLDivElement;
+const syncLang = () => {
+  for (const s of langEl.querySelectorAll<HTMLSpanElement>('span')) {
+    s.classList.toggle('active', s.dataset.l === lang());
+  }
+};
+langEl.addEventListener('click', (e) => {
+  const l = (e.target as HTMLElement).dataset?.l;
+  if (l === 'en' || l === 'tr') setLang(l as Lang);
+});
+onLangChange(syncLang);
+syncLang();
 
 /**
  * Put something in the world.
@@ -121,7 +140,14 @@ export function spawn(
 
 /** Attach text to a place, shown when the viewer walks near it. */
 export function label(gv: GyroVector, title: string, body: string, radius = 0.25): void {
-  pois.push({ id: `poi-${pois.length}`, title, body, gv, radius });
+  // Console-authored labels are monolingual; show the same text in both.
+  pois.push({
+    id: `poi-${pois.length}`,
+    title: { en: title, tr: title },
+    body: { en: body, tr: body },
+    gv,
+    radius,
+  });
 }
 
 // ------------------------------------------------------------------ controls
@@ -208,14 +234,14 @@ function frame(now: number) {
 
   hud.innerHTML =
     `<b>geometry</b>  spherical (K = ${HM.K})\n` +
-    `<b>world</b>     ${toUnits(2 * Math.PI).toFixed(1)} units around, empty\n` +
+    `<b>world</b>     ${toUnits(2 * Math.PI).toFixed(1)} units around\n` +
     // Straight-line distance from spawn peaks at PI at the antipode and then
     // counts back down. It is not an odometer — distanceWalked is.
     `<b>from spawn</b> ${toUnits(world.distanceFromOrigin()).toFixed(2)} u  (max ${toUnits(Math.PI).toFixed(1)} at the antipode)\n` +
     `<b>walked</b>    ${toUnits(controls.distanceWalked).toFixed(1)} u  = ${(controls.distanceWalked / (2 * Math.PI)).toFixed(2)} laps\n` +
     `<b>height</b>    ${toUnits(controls.height).toFixed(2)} u  (${(controls.height / EYE_HEIGHT).toFixed(2)}x eye)\n` +
     `<b>mode</b>      ${controls.mode}${controls.isLocked ? '' : '  — click to look'}\n` +
-    `<b>objects</b>   ${skeleton.objects.length + stations.objects.length} placed, ${pois.length} labelled\n` +
+    `<b>objects</b>   ${skeleton.objects.length + stations.objects.length + landmarks.objects.length} placed, ${pois.length} labelled\n` +
     // Diagnostics for the camera-jump report: if a jump happens and the spike
     // count does not move, the cause is something other than a bad delta.
     `<b>mouse</b>     peak ${controls.largestDelta.toFixed(0)}px  ·  ${controls.rejectedSpikes} spike${controls.rejectedSpikes === 1 ? '' : 's'} dropped\n` +

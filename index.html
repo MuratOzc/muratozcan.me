@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spherical engine — demo</title>
+<title>Murat Özcan</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; }
   canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
@@ -15,9 +15,19 @@
   }
   #hud { top: 10px; left: 10px; pointer-events: none; }
   #tests { bottom: 10px; left: 10px; max-width: 62ch; white-space: pre-wrap; }
-  #help { top: 10px; right: 10px; pointer-events: none; }
+  #lang { top: 10px; right: 10px; cursor: pointer; user-select: none; }
+  #lang span { color: #66707a; }
+  #lang span.active { color: #7fd3f7; font-weight: 600; }
+  #help { top: 58px; right: 10px; pointer-events: none; }
   b { color: #7fd3f7; font-weight: 600; }
   .pass { color: #7ee787; } .fail { color: #ff7b72; }
+
+  #crosshair {
+    position: fixed; left: 50%; top: 50%;
+    width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%; background: #e9eef3b8;
+    box-shadow: 0 0 4px #000a; pointer-events: none; z-index: 4;
+  }
 
   .proximity-panel {
     position: fixed; left: 50%; bottom: 8vh; transform: translateX(-50%);
@@ -34,10 +44,16 @@
   }
   .proximity-panel.untitled h2 { display: none; }
   .proximity-panel p { margin: 0; }
+  .proximity-panel a {
+    color: #7fd3f7; pointer-events: auto; text-decoration: none;
+    border-bottom: 1px solid #7fd3f766;
+  }
 </style>
 </head>
 <body>
   <canvas id="view"></canvas>
+  <div id="crosshair"></div>
+  <div class="panel" id="lang"><span data-l="en">EN</span> · <span data-l="tr">TR</span></div>
   <div class="panel" id="hud"></div>
   <div class="panel" id="tests"></div>
   <div class="panel" id="help">click to look

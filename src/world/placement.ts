@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { GyroVector, HM } from '../engine';
+import type { Localized } from '../content/i18n';
 
 /**
  * Authoring units.
@@ -126,8 +127,8 @@ export function distanceToViewer(gv: GyroVector, worldGV: GyroVector): number {
 /** Somewhere in the world with something to say. Read by ProximityPanel. */
 export interface Poi {
   id: string;
-  title: string;
-  body: string;
+  title: Localized;
+  body: Localized;
   gv: GyroVector;
   /** Geodesic radius within which the panel shows, in radians. */
   radius: number;

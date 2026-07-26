@@ -1,5 +1,6 @@
 import { BoxGeometry } from 'three';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { L } from '../../content/i18n';
 import { units, type Poi } from '../placement';
 import { loadModel, spawnModel } from '../model';
 
@@ -26,8 +27,11 @@ export function buildPlinth(
     object: plinthObj,
     poi: {
       id: 'me',
-      title: 'Murat Özcan',
-      body: 'Stand-in figure. The real scan goes here.',
+      title: L('Murat Özcan', 'Murat Özcan'),
+      body: L(
+        'Stand-in figure. The real 3D scan goes here.',
+        'Şimdilik vekil. Gerçek 3B tarama buraya gelecek.',
+      ),
       gv: at,
       radius: units(6),
     },

@@ -72,7 +72,7 @@ export class HyperObject extends Group {
     // The shadow-pass twin: same geometry, same parent (so animated child
     // nodes cast moving shadows via the inherited modelMatrix), but a
     // depth-only material and a layer the main camera never renders.
-    if (shared.shadowsEnabled) {
+    if (shared.shadowsEnabled && opts.castShadow !== false) {
       const depthMat = createShadowDepthMaterial(shared, {
         tanKHeight: this.useTanKHeight,
         ...opts,

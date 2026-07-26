@@ -1,6 +1,10 @@
 import type { GyroVector, HyperObject, HyperWorld } from '../../engine';
 import type { Poi } from '../placement';
 import { buildCameraMast, type Watcher } from './cameras';
+import { buildMailbox } from './mailbox';
+import { buildSchoolDesk } from './schoolDesk';
+import { buildSignpost } from './signpost';
+import { buildVault } from './vault';
 
 /**
  * Everything a station build can contribute to the world.
@@ -23,9 +27,19 @@ export const EXHIBITS: Record<
   string,
   (world: HyperWorld, at: GyroVector, yaw: number, out: Built) => void
 > = {
+  title(world, at, yaw, out) {
+    out.objects.push(buildSignpost(world, at, yaw));
+  },
+  origin(world, at, yaw, out) {
+    out.objects.push(buildSchoolDesk(world, at, yaw));
+  },
   security(world, at, yaw, out) {
     const mast = buildCameraMast(world, at, yaw);
     out.objects.push(mast.object);
     out.watchers.push(...mast.watchers);
+    out.objects.push(buildVault(world, at, yaw));
+  },
+  contact(world, at, yaw, out) {
+    out.objects.push(buildMailbox(world, at, yaw));
   },
 };

@@ -1,4 +1,5 @@
 import type { GyroVector } from '../engine';
+import { onLangChange, t } from '../content/i18n';
 import { distanceToViewer, type Poi } from './placement';
 
 /**
@@ -12,7 +13,27 @@ import { distanceToViewer, type Poi } from './placement';
  * spherical space a distant thing can be very large on screen, so anchoring
  * panels to objects would put text in wild places. A single fixed panel keeps
  * it calm.
+ *
+ * The one exception to "no clicking": URLs and email addresses in body text
+ * become real links (the contact station needs them). Everything else stays
+ * pointer-transparent.
  */
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Escaped text -> HTML with anchors for URLs/emails and <br> for newlines. */
+function renderBody(text: string): string {
+  return escapeHtml(text)
+    .replace(/https?:\/\/[^\s<]+/g, (u) => {
+      const label = u.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+      return `<a href="${u}" target="_blank" rel="noopener">${label}</a>`;
+    })
+    .replace(/[\w.+-]+@[\w.-]+\.\w+/g, (m) => `<a href="mailto:${m}">${m}</a>`)
+    .replace(/\n/g, '<br>');
+}
+
 export class ProximityPanel {
   private el: HTMLElement;
   private titleEl: HTMLElement;
@@ -27,6 +48,12 @@ export class ProximityPanel {
     this.bodyEl = document.createElement('p');
     this.el.append(this.titleEl, this.bodyEl);
     container.append(this.el);
+
+    // Language switched: forget what is on screen so the next update repaints
+    // the same POI in the new language.
+    onLangChange(() => {
+      this.current = null;
+    });
   }
 
   update(pois: Poi[], worldGV: GyroVector, dt: number): Poi | null {
@@ -46,9 +73,10 @@ export class ProximityPanel {
 
     if (best && best.id !== this.current) {
       this.current = best.id;
-      this.titleEl.textContent = best.title;
-      this.bodyEl.textContent = best.body;
-      this.el.classList.toggle('untitled', best.title === '');
+      const title = t(best.title);
+      this.titleEl.textContent = title;
+      this.bodyEl.innerHTML = renderBody(t(best.body));
+      this.el.classList.toggle('untitled', title === '');
     }
     if (!best) this.current = null;
 
