@@ -13,23 +13,32 @@ import { makeTextTexture } from '../text';
  * of projection; pace it out and every corner is square. Euclid holds locally
  * and fails globally, which is the entire personality of this website.
  *
- * The corners are the rotated standard basis: rotating {ex, ey, ez} about the
- * world's y axis swings the triangle off the aisle so its sides sweep the
- * lawn instead of blocking the walk.
+ * Placement: the triangle lives ENTIRELY on the right lawn. The three corners
+ * are three orthonormal directions arranged symmetrically around the "right
+ * pole" (1,0,0) — each at 54.7° from it, 120° apart in azimuth. Pairwise dots:
+ * cos²θ + sin²θ·cos120° = 1/3 − 1/3 = 0, so the corners stay mutually
+ * perpendicular, while every point of every side keeps x > 0: corners sit
+ * 6.2 units right of the path and the sides bow AWAY to 9.6, so the walk is
+ * never crossed. Spinning PHI0 slides the corners along the path direction;
+ * the current value tucks them between station bays.
  */
 
-const PSI = -0.85;
-const D0 = 1.05;
+const THETA = Math.acos(1 / Math.sqrt(3));
+const PHI0 = -1.7;
 
 function corners(): Vector3[] {
-  const cs = Math.cos(PSI);
-  const sn = Math.sin(PSI);
-  const ry = (v: Vector3) => new Vector3(v.x * cs + v.z * sn, v.y, -v.x * sn + v.z * cs);
-  return [
-    ry(new Vector3(1, 0, 0)),
-    ry(new Vector3(0, Math.cos(D0), -Math.sin(D0))),
-    ry(new Vector3(0, Math.sin(D0), Math.cos(D0))),
-  ];
+  const out: Vector3[] = [];
+  for (let k = 0; k < 3; k++) {
+    const phi = PHI0 + (k * 2 * Math.PI) / 3;
+    out.push(
+      new Vector3(
+        Math.cos(THETA),
+        Math.sin(THETA) * Math.cos(phi),
+        Math.sin(THETA) * Math.sin(phi),
+      ),
+    );
+  }
+  return out;
 }
 
 /** Ground-sphere unit vector -> (bearing, geodesic distance) from spawn. */
@@ -116,8 +125,8 @@ export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi:
     objects.push(o);
   }
 
-  // The label sits on the corner nearest the path, where people will
-  // actually cross the line.
+  // The label sits on the first corner walkers reach, where the painted
+  // line is most likely to be noticed.
   return {
     objects,
     poi: {
@@ -127,7 +136,7 @@ export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi:
         'Every corner of this triangle is exactly 90 degrees. Walk it and check. I like confusing things — and on a sphere, the ground itself plays along.',
         'Bu üçgenin her köşesi tam 90 derece. Yürüyüp kontrol edin. Kafa karıştıran şeyleri severim — kürede zeminin kendisi de bu oyuna katılıyor.',
       ),
-      gv: groundGV(C[1]),
+      gv: groundGV(C[0]),
       radius: 0.55,
     },
   };

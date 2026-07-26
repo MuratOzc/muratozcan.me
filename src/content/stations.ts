@@ -108,7 +108,10 @@ const DEFS: StationDef[] = [
   {
     id: 'security',
     title: L('Security', 'Güvenlik'),
-    object: L('camera mast; a safe labelled .env', 'kamera direği; üzerinde .env yazan kasa'),
+    object: L(
+      'camera mast, barbed wire, a safe labelled .env',
+      'kamera direği, dikenli tel, üzerinde .env yazan kasa',
+    ),
     body: L(
       'Secure code, correct permissions, certificates that never lapse, logs that actually get read — and secrets that stay in the safe. Security is mostly refusing to do the stupid thing, daily, forever. Done right, it looks like nothing happening. The cameras, by the way, have been with you since the arch.',
       'Güvenli kod, doğru yetkiler, süresi geçmeyen sertifikalar, gerçekten okunan loglar — ve kasada kalan sırlar. Güvenlik çoğunlukla aptalca şeyi yapmayı reddetmektir; her gün, sonsuza dek. Doğru yapılınca hiçbir şey olmuyormuş gibi görünür. Bu arada kameralar, kemerin altından geçtiğinizden beri sizinle.',

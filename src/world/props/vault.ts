@@ -1,15 +1,87 @@
-import { BoxGeometry, CylinderGeometry, PlaneGeometry } from 'three';
+import {
+  CylinderGeometry,
+  PlaneGeometry,
+  TorusGeometry,
+  type BufferGeometry,
+} from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
-import { L } from '../../content/i18n';
-import { makeLocalizedTextTexture, makeTextTexture } from '../text';
+import { makeTextTexture } from '../text';
 
 /**
- * Security, minor exhibits: the things that go next to the camera mast.
+ * Security, minor exhibits: what stands beside the camera mast.
  *
  * A safe with `.env` stencilled on the door — the file that stays in the
- * safe — and a TLS certificate framed on a post like a diploma, because
- * around here a certificate that never lapses IS the diploma.
+ * safe — and a barbed-wire perimeter around the whole station. The wire is
+ * waist-high and sparse: it would stop nobody, which is accurate, because the
+ * cameras already saw you coming.
  */
+
+/**
+ * RoundedBoxGeometry is non-indexed while the primitives are indexed, and
+ * mergeGeometries refuses to mix the two — flatten everything first.
+ */
+function merge(parts: BufferGeometry[]): BufferGeometry {
+  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+}
+
+/** Half-extent of the fenced square, centred on the mast. */
+const FENCE = 2.1;
+const WIRE_HEIGHTS = [0.42, 0.72, 1.02];
+
+function buildFence(): { posts: BufferGeometry; wire: BufferGeometry } {
+  const posts: BufferGeometry[] = [];
+  const wire: BufferGeometry[] = [];
+
+  // Posts: corners and mid-spans.
+  const postSpots: Array<[number, number]> = [];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) postSpots.push([sx * FENCE, sz * FENCE]);
+  }
+  for (const s of [-1, 1]) {
+    postSpots.push([s * FENCE, 0]);
+    postSpots.push([0, s * FENCE]);
+  }
+  for (const [x, z] of postSpots) {
+    const post = new CylinderGeometry(0.028, 0.036, 1.18, 10);
+    post.translate(x, 0.59, z);
+    posts.push(post);
+  }
+
+  // Wires: three strands per side, plus barbs twisted onto the top strand.
+  for (const [axis, fixed] of [['x', -1], ['x', 1], ['z', -1], ['z', 1]] as const) {
+    for (const y of WIRE_HEIGHTS) {
+      const strand = new CylinderGeometry(0.011, 0.011, FENCE * 2, 6);
+      if (axis === 'x') {
+        strand.rotateZ(Math.PI / 2);
+        strand.translate(0, y, fixed * FENCE);
+      } else {
+        strand.rotateX(Math.PI / 2);
+        strand.translate(fixed * FENCE, y, 0);
+      }
+      wire.push(strand);
+    }
+    // Barbs: little crossed spikes along the top wire.
+    const yTop = WIRE_HEIGHTS[WIRE_HEIGHTS.length - 1];
+    for (let i = -3; i <= 3; i++) {
+      const along = (i / 3.5) * FENCE;
+      for (const tilt of [Math.PI / 4, -Math.PI / 4]) {
+        const barb = new CylinderGeometry(0.005, 0.001, 0.085, 5);
+        if (axis === 'x') {
+          barb.rotateX(tilt);
+          barb.translate(along, yTop, fixed * FENCE);
+        } else {
+          barb.rotateZ(tilt);
+          barb.translate(fixed * FENCE, yTop, along);
+        }
+        wire.push(barb);
+      }
+    }
+  }
+
+  return { posts: mergeGeometries(posts), wire: mergeGeometries(wire) };
+}
 
 export function buildVault(
   world: HyperWorld,
@@ -19,19 +91,51 @@ export function buildVault(
   const object = new HyperObject(at);
   object.rotation.y = yaw;
 
-  // ---- the safe
-  const body = new BoxGeometry(0.62, 0.78, 0.6, 3, 4, 3);
-  body.translate(1.05, 0.39, 0);
-  object.addGeometry(world.shared, body, { color: 0x3a4048, ambient: 0.45 });
-  const door = new BoxGeometry(0.5, 0.62, 0.04, 3, 3, 1);
-  door.translate(1.05, 0.42, 0.31);
-  object.addGeometry(world.shared, door, { color: 0x474e58, ambient: 0.5 });
-  const handle = new CylinderGeometry(0.075, 0.075, 0.05, 12);
-  handle.rotateX(Math.PI / 2);
-  handle.translate(1.18, 0.36, 0.345);
-  object.addGeometry(world.shared, handle, { color: 0x9aa0a6, ambient: 0.55 });
-  const label = new PlaneGeometry(0.34, 0.13, 2, 1);
-  label.translate(1.05, 0.62, 0.335);
+  // ---- concrete pad, so the safe sits on something poured, not on grass.
+  const pad = new RoundedBoxGeometry(1.1, 0.1, 1.1, 2, 0.02);
+  pad.translate(1.15, 0.05, 0.1);
+  object.addGeometry(world.shared, pad, { color: 0xaaa9a2, ambient: 0.6 });
+
+  // ---- the safe: rounded body, proud door, spoked wheel, stencilled label.
+  // Turned a few degrees toward the path so the door catches the eye.
+  const SAFE_X = 1.15;
+  const SAFE_Z = 0.1;
+  const TURN = -0.22;
+
+  const body = new RoundedBoxGeometry(0.68, 0.8, 0.64, 3, 0.035);
+  body.translate(0, 0.5, 0);
+  const door = new RoundedBoxGeometry(0.54, 0.64, 0.05, 2, 0.02);
+  door.translate(0, 0.52, 0.315);
+  const hinge = new CylinderGeometry(0.022, 0.022, 0.56, 8);
+  hinge.translate(-0.3, 0.52, 0.31);
+
+  const wheelRing = new TorusGeometry(0.075, 0.014, 8, 18);
+  wheelRing.translate(0.08, 0.46, 0.36);
+  const hub = new CylinderGeometry(0.02, 0.02, 0.06, 10);
+  hub.rotateX(Math.PI / 2);
+  hub.translate(0.08, 0.46, 0.355);
+  const spokes: BufferGeometry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const spoke = new CylinderGeometry(0.009, 0.009, 0.15, 6);
+    spoke.rotateZ((i / 3) * Math.PI);
+    spoke.translate(0.08, 0.46, 0.36);
+    spokes.push(spoke);
+  }
+
+  const steel = merge([body, door, hinge]);
+  steel.rotateY(TURN);
+  steel.translate(SAFE_X, 0.1, SAFE_Z);
+  object.addGeometry(world.shared, steel, { color: 0x555c66, ambient: 0.48 });
+
+  const brass = merge([wheelRing, hub, ...spokes]);
+  brass.rotateY(TURN);
+  brass.translate(SAFE_X, 0.1, SAFE_Z);
+  object.addGeometry(world.shared, brass, { color: 0xc9cdd4, ambient: 0.55 });
+
+  const label = new PlaneGeometry(0.3, 0.11, 2, 1);
+  label.translate(-0.06, 0.68, 0.345);
+  label.rotateY(TURN);
+  label.translate(SAFE_X, 0.1, SAFE_Z);
   object.addGeometry(world.shared, label, {
     map: makeTextTexture('.env', { color: '#e8edf2', width: 512, height: 192 }),
     color: 0xffffff,
@@ -40,26 +144,10 @@ export function buildVault(
     castShadow: false,
   });
 
-  // ---- the framed certificate
-  const post = new BoxGeometry(0.08, 1.5, 0.08, 1, 8, 1);
-  post.translate(1.95, 0.75, 0);
-  object.addGeometry(world.shared, post, { color: 0x8e8878, ambient: 0.55 });
-  const frame = new BoxGeometry(0.56, 0.72, 0.04, 3, 3, 1);
-  frame.translate(1.95, 1.52, 0.02);
-  object.addGeometry(world.shared, frame, { color: 0x8a7a5e, ambient: 0.55 });
-  const paper = new PlaneGeometry(0.46, 0.6, 3, 3);
-  paper.translate(1.95, 1.52, 0.045);
-  object.addGeometry(world.shared, paper, {
-    map: makeLocalizedTextTexture(L('TLS · VALID', 'TLS · GEÇERLİ'), {
-      width: 512,
-      height: 640,
-      color: '#3b4148',
-      background: '#efece3',
-    }),
-    color: 0xffffff,
-    ambient: 0.9,
-    castShadow: false,
-  });
+  // ---- the perimeter.
+  const fence = buildFence();
+  object.addGeometry(world.shared, fence.posts, { color: 0x8b9199, ambient: 0.5 });
+  object.addGeometry(world.shared, fence.wire, { color: 0xb9bfc7, ambient: 0.52 });
 
   world.add(object);
   return object;
