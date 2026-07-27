@@ -3,6 +3,7 @@ import type { Poi } from '../placement';
 import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
 import { buildMailbox } from './mailbox';
+import { buildMonitor } from './monitor';
 import { buildRack } from './rack';
 import { buildSchoolDesk } from './schoolDesk';
 import { buildSignpost } from './signpost';
@@ -42,6 +43,11 @@ export const EXHIBITS: Record<
     const model = buildWorldModel(world, at, yaw);
     out.objects.push(model.object);
     out.tickers.push(model.tick);
+  },
+  frontend(world, at, yaw, out) {
+    const monitor = buildMonitor(world, at, yaw);
+    out.objects.push(monitor.object);
+    out.tickers.push(monitor.tick);
   },
   data(world, at, yaw, out) {
     const cabinets = buildCabinets(world, at, yaw);
