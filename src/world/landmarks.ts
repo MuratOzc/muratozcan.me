@@ -2,6 +2,7 @@ import { type HyperObject, type HyperWorld } from '../engine';
 import { L } from '../content/i18n';
 import { units, type Poi } from './placement';
 import { buildChessTable } from './props/chess';
+import { buildEasels } from './props/easels';
 import { buildTriangle, triangleCenter } from './props/triangle';
 
 /**
@@ -41,6 +42,13 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
     gv: centre.gv,
     radius: units(5),
   });
+
+  // ---- the easels, ringed around the left pole: the exact mirror of the chess
+  // table on the right one. The path argues that the job is the whole person;
+  // these are there to disagree.
+  const easels = buildEasels(world);
+  objects.push(...easels.objects);
+  pois.push(easels.poi);
 
   return { objects, pois };
 }
