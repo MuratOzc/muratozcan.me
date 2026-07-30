@@ -1,11 +1,19 @@
 import {
+  Camera,
   DepthTexture,
+  GLSL3,
   LessEqualCompare,
   LinearFilter,
+  Mesh,
+  NearestFilter,
+  NoColorSpace,
   OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   Scene,
+  ShaderMaterial,
   UnsignedIntType,
+  Vector2,
   Vector3,
   Vector4,
   WebGLRenderer,
@@ -73,6 +81,27 @@ export class HyperWorld {
   private lightCamera: OrthographicCamera | null = null;
   private shadowExtent = 0.5;
 
+  /**
+   * The view is rendered here and blitted to the canvas, never drawn to the
+   * canvas directly.
+   *
+   * Not a stylistic choice. Drawing the same meshes into a render target AND
+   * into the default framebuffer within one frame stalls for ~21ms — the
+   * monitor's feed pass (props/monitor.ts) does exactly that, and it cost the
+   * whole site 47fps against 145fps without it. Routing every world draw
+   * through a target and compositing with one trivial program avoids the
+   * transition entirely. The shadow pass never tripped it because its light
+   * camera renders a disjoint layer.
+   *
+   * samples MUST match the canvas: the context is created with antialias, and
+   * a non-multisampled target changes 2% of output bytes.
+   */
+  private viewTarget: WebGLRenderTarget;
+  private blitScene = new Scene();
+  private blitCamera = new Camera();
+  private blitMaterial: ShaderMaterial;
+  private drawingBuffer = new Vector2();
+
   constructor(opts: HyperWorldOptions) {
     setGeometry(opts.curvature ?? 1, opts.unitScale ?? 1);
 
@@ -91,6 +120,46 @@ export class HyperWorld {
     // nearby geometry is genuinely a few thousandths of a unit away.
     this.camera = new PerspectiveCamera(opts.fov ?? 70, 1, 0.0005, 20);
     this.camera.position.set(0, 0, 0);
+
+    // Nothing in this scene moves except through updateHyper and the tickers,
+    // both of which run before any pass. Three would otherwise walk all ~2000
+    // nodes once per render() call — three times a frame on feed frames.
+    this.scene.matrixWorldAutoUpdate = false;
+
+    this.viewTarget = new WebGLRenderTarget(1, 1, {
+      samples: 4,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    // Sampled and written back untouched. A raw GLSL3 shader gets no colour
+    // management injected, so leaving the texture unmanaged makes the blit an
+    // exact copy rather than a decode/encode round trip.
+    this.viewTarget.texture.colorSpace = NoColorSpace;
+    this.viewTarget.texture.minFilter = NearestFilter;
+    this.viewTarget.texture.magFilter = NearestFilter;
+
+    this.blitMaterial = new ShaderMaterial({
+      glslVersion: GLSL3,
+      uniforms: { uView: { value: this.viewTarget.texture } },
+      depthTest: false,
+      depthWrite: false,
+      vertexShader: /* glsl */ `
+        out vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uView;
+        in vec2 vUv;
+        layout(location = 0) out vec4 fragColor;
+        void main() { fragColor = texture(uView, vUv); }
+      `,
+    });
+    const quad = new Mesh(new PlaneGeometry(2, 2), this.blitMaterial);
+    quad.frustumCulled = false;
+    this.blitScene.add(quad);
 
     this.shared = createSharedUniforms();
     const fc = opts.fogColor ?? [0.72, 0.79, 0.86];
@@ -152,14 +221,31 @@ export class HyperWorld {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    // The target backs the canvas pixel for pixel, so it follows the drawing
+    // buffer rather than the CSS size.
+    this.renderer.getDrawingBufferSize(this.drawingBuffer);
+    this.viewTarget.setSize(this.drawingBuffer.x, this.drawingBuffer.y);
+  }
+
+  /**
+   * Bring world matrices up to date. Idempotent within a frame in practice —
+   * call it before any pass that is not already preceded by render().
+   */
+  syncMatrices(): void {
+    this.scene.updateMatrixWorld();
   }
 
   render(): void {
     this.shared.uK.value = HM.K;
     this.shared.uUnitScale.value = HM.unitScale;
     for (const obj of this.objects) obj.updateHyper(this.worldGV);
+    this.syncMatrices();
     if (this.shadowTarget && this.lightCamera) this.renderShadowMap();
+
+    this.renderer.setRenderTarget(this.viewTarget);
     this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.render(this.blitScene, this.blitCamera);
   }
 
   /**

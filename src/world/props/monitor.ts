@@ -31,7 +31,8 @@ import {
  * That recursion is the honest joke about frontend work: it is the only layer
  * anyone ever sees, and here it is looking at itself.
  *
- * Cost is one extra scene pass per frame. The shadow map is NOT re-rendered:
+ * Cost is one extra scene pass, ten times a second. The shadow map is NOT
+ * re-rendered:
  * the feed camera shares the viewer's chart, so the existing map is already
  * correct for it — which is the whole reason the feed uses the viewer's
  * viewpoint rather than an independent one.
@@ -39,6 +40,8 @@ import {
 
 const FEED_W = 640;
 const FEED_H = 400;
+/** Seconds between feed redraws. */
+const FEED_INTERVAL = 1 / 10;
 /** Screen size in authored units — matches the feed's 1.6 aspect. */
 const SCREEN_W = 1.04;
 const SCREEN_H = 0.65;
@@ -211,19 +214,29 @@ export function buildMonitor(
   feedCam.rotation.order = 'YXZ';
 
   let frame = 0;
-  let call = 0;
-  const tick = () => {
+  let since = Infinity;
+  const tick = (_worldGV: GyroVector, dt: number) => {
     // Tickers run BEFORE the world renders, so on the very first frame the
     // shadow map has not been drawn yet and its uniform is still null.
     // Rendering the scene then would sample a null sampler2DShadow, which is
     // an invalid operation. Wait for the world to have rendered once.
     if (!world.shared.uShadowMap.value) return;
 
-    // Half rate. The feed is a second full scene pass, which is the most
-    // expensive thing on the site; a hand-sized screen reads identically at
-    // 30Hz, and skipping whole frames (rather than swapping without drawing)
-    // keeps the image stable instead of alternating recursion depths.
-    if (call++ % 2 !== 0) return;
+    // The feed is a second full scene pass, and the screen is visible from
+    // anywhere on the sphere, so it cannot be gated on proximity — it is gated
+    // on rate instead. A hand-sized panel reads the same at 10Hz, and skipping
+    // whole frames (rather than swapping without drawing) keeps the image
+    // stable instead of alternating recursion depths.
+    //
+    // Wall-clock rather than every-Nth-frame: the cost must not scale with how
+    // fast the machine happens to run.
+    since += dt;
+    if (since < FEED_INTERVAL) return;
+    since = 0;
+
+    // Tickers that animate geometry run either side of this one, so the
+    // matrices this pass reads are its own responsibility.
+    world.syncMatrices();
 
     const read = frame === 0 ? null : targets[frame % 2];
     const write = targets[(frame + 1) % 2];
