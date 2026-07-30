@@ -72,7 +72,10 @@ const DEFS: StationDef[] = [
   {
     id: 'backend',
     title: L('Backend', 'Backend'),
-    object: L('request machine: in, pipes, out', 'istek makinesi: giriş, borular, çıkış'),
+    object: L(
+      'a cased movement, thirty gears, one input',
+      'kasalı bir mekanizma, otuz dişli, tek giriş',
+    ),
     body: L(
       'C# and .NET — Framework and modern, Razor, Blazor, MVC, minimal APIs, with detours through React and Node. The application is the part nobody applauds: requests in, correct answers out, every time, for years. That is the whole trick, and it is harder than it sounds.',
       'C# ve .NET — Framework’ü de moderni de; Razor, Blazor, MVC, minimal API’ler; arada React ve Node gezintileri. Uygulama, kimsenin alkışlamadığı kısımdır: istek girer, doğru cevap çıkar; her seferinde, yıllarca. Bütün numara bu — ve kulağa geldiğinden zor.',

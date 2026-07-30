@@ -2,6 +2,7 @@ import type { GyroVector, HyperObject, HyperWorld } from '../../engine';
 import type { Poi } from '../placement';
 import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
+import { buildGears } from './gears';
 import { buildMailbox } from './mailbox';
 import { buildMonitor } from './monitor';
 import { buildRack } from './rack';
@@ -43,6 +44,11 @@ export const EXHIBITS: Record<
     const model = buildWorldModel(world, at, yaw);
     out.objects.push(model.object);
     out.tickers.push(model.tick);
+  },
+  backend(world, at, yaw, out) {
+    const gears = buildGears(world, at, yaw);
+    out.objects.push(gears.object);
+    out.tickers.push(gears.tick);
   },
   frontend(world, at, yaw, out) {
     const monitor = buildMonitor(world, at, yaw);
