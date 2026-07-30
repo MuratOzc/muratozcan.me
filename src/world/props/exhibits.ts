@@ -2,6 +2,7 @@ import type { GyroVector, HyperObject, HyperWorld } from '../../engine';
 import type { Poi } from '../placement';
 import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
+import { buildConveyor } from './conveyor';
 import { buildGears } from './gears';
 import { buildMailbox } from './mailbox';
 import { buildMonitor } from './monitor';
@@ -64,6 +65,11 @@ export const EXHIBITS: Record<
     const rack = buildRack(world, at, yaw);
     out.objects.push(rack.object);
     out.tickers.push(rack.tick);
+  },
+  shipping(world, at, yaw, out) {
+    const conveyor = buildConveyor(world, at, yaw);
+    out.objects.push(conveyor.object);
+    out.tickers.push(conveyor.tick);
   },
   security(world, at, yaw, out) {
     const mast = buildCameraMast(world, at, yaw);
