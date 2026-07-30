@@ -48,6 +48,15 @@
     color: #7fd3f7; pointer-events: auto; text-decoration: none;
     border-bottom: 1px solid #7fd3f766;
   }
+  /* Sits under the crosshair, where the eye already is when you are aiming. */
+  .aim-prompt {
+    position: fixed; left: 50%; top: calc(50% + 26px); transform: translateX(-50%);
+    padding: 5px 11px; pointer-events: none; white-space: nowrap;
+    background: #0b0d10d9; border: 1px solid #39424e; border-radius: 4px;
+    font: 12px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+    letter-spacing: .1em; color: #e2c98d; opacity: 0;
+    transition: opacity .12s ease-out;
+  }
 </style>
 </head>
 <body>
@@ -61,6 +70,7 @@ WASD   move
 Space  rise
 Shift  lower
 R      sprint
+E      interact
 F      walk / fly
 &larr; &rarr;    turn
 &uarr; &darr;    look up/down

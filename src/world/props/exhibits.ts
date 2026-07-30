@@ -2,6 +2,7 @@ import type { GyroVector, HyperObject, HyperWorld } from '../../engine';
 import type { Poi } from '../placement';
 import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
+import { buildContact } from './contact';
 import { buildConveyor } from './conveyor';
 import { buildGears } from './gears';
 import { buildMailbox } from './mailbox';
@@ -78,6 +79,9 @@ export const EXHIBITS: Record<
     out.objects.push(buildVault(world, at, yaw));
   },
   contact(world, at, yaw, out) {
+    const board = buildContact(world, at, yaw);
+    out.objects.push(board.object);
+    out.tickers.push(board.tick);
     out.objects.push(buildMailbox(world, at, yaw));
   },
 };

@@ -1,24 +1,17 @@
-import {
-  BoxGeometry,
-  CylinderGeometry,
-  PlaneGeometry,
-  SphereGeometry,
-  type BufferGeometry,
-} from 'three';
+import { BoxGeometry, CylinderGeometry, type BufferGeometry } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
-import { makeTextTexture } from '../text';
 
 /**
- * Station 10: contact.
+ * Station 10: contact — the mailbox, with its flag up.
  *
- * A round-top mailbox with its flag up, and a fingerpost whose arrow plates
- * swing off in different directions — one per link. The clickable links live
- * in the proximity panel (DOM); the plates are wayfinding, not UI.
+ * Set dressing beside the link board (props/contact.ts), which is where the
+ * interaction lives. It used to carry a fingerpost of arrow plates labelled
+ * GMAIL / LINKEDIN / GITHUB / INSTAGRAM; those are gone, because they looked
+ * like buttons and were not, and a thing that invites a click and ignores it
+ * teaches the visitor that nothing here responds.
  */
-
-const LINKS = ['GMAIL', 'LINKEDIN', 'GITHUB', 'INSTAGRAM'];
 
 /**
  * RoundedBoxGeometry is non-indexed while the primitives are indexed, and
@@ -69,7 +62,9 @@ export function buildMailbox(
   const RED = 0xd8604a;
 
   // ---------------- the mailbox: post, cross-arm brace, body, door, flag.
-  const MB_X = -0.55;
+  // Off to the left of the tokens — it shares the station's placement, so its
+  // own local X is the only thing separating them.
+  const MB_X = -1.7;
   const MB_Y = 1.06;
 
   const post = new CylinderGeometry(0.042, 0.05, MB_Y, 12);
@@ -104,60 +99,6 @@ export function buildMailbox(
   const pennant = new RoundedBoxGeometry(0.025, 0.09, 0.16, 1, 0.008);
   pennant.translate(MB_X - 0.175, MB_Y + 0.36, 0.12);
   object.addGeometry(world.shared, pennant, { color: RED, ambient: 0.55 });
-
-  // ---------------- the fingerpost: tapered pole, finial, arrow plates.
-  const FP_X = 0.55;
-  const FP_H = 2.3;
-
-  const pole = new CylinderGeometry(0.035, 0.055, FP_H, 12);
-  pole.translate(FP_X, FP_H / 2, 0);
-  object.addGeometry(world.shared, pole, { color: WOOD, ambient: 0.5 });
-  const finial = new SphereGeometry(0.055, 12, 10);
-  finial.translate(FP_X, FP_H + 0.03, 0);
-  object.addGeometry(world.shared, finial, { color: WOOD, ambient: 0.55 });
-
-  LINKS.forEach((name, i) => {
-    const swing = [0.55, -0.5, 0.15, -1.05][i];
-    const y = FP_H - 0.25 - i * 0.3;
-
-    // Collar the plate clamps onto, so it visibly attaches to the pole.
-    const collar = new CylinderGeometry(0.052, 0.052, 0.06, 12);
-    collar.translate(FP_X, y, 0);
-    object.addGeometry(world.shared, collar, { color: 0x7a6248, ambient: 0.5 });
-
-    // Plate: rounded slab with a diamond tip — an arrow, pointing somewhere
-    // that is not here.
-    const plateParts: BufferGeometry[] = [];
-    const slab = new RoundedBoxGeometry(0.62, 0.15, 0.03, 2, 0.012);
-    slab.translate(0.36, 0, 0);
-    plateParts.push(slab);
-    const tip = new BoxGeometry(0.11, 0.11, 0.03, 1, 1, 1);
-    tip.rotateZ(Math.PI / 4);
-    tip.translate(0.67, 0, 0);
-    plateParts.push(tip);
-    const plate = merge(plateParts);
-    plate.rotateY(swing);
-    plate.translate(FP_X, y, 0);
-    object.addGeometry(world.shared, plate, { color: 0xe6dfd0, ambient: 0.62 });
-
-    const face = new PlaneGeometry(0.56, 0.115, 1, 1);
-    face.translate(0.36, 0, 0.017);
-    face.rotateY(swing);
-    face.translate(FP_X, y, 0);
-    object.addGeometry(world.shared, face, {
-      map: makeTextTexture(name, {
-        width: 768,
-        height: 144,
-        color: '#2b3138',
-        letterSpacing: 5,
-      }),
-      color: 0xffffff,
-      ambient: 0.9,
-      alphaTest: 0.3,
-      castShadow: false,
-      receiveShadow: false,
-    });
-  });
 
   world.add(object);
   return object;

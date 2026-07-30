@@ -135,10 +135,10 @@ const DEFS: StationDef[] = [
   {
     id: 'contact',
     title: L('Contact', 'İletişim'),
-    object: L('mailbox and a signpost with links', 'posta kutusu ve bağlantı tabelası'),
+    object: L('four turning marks, and a mailbox', 'dönen dört işaret ve bir posta kutusu'),
     body: L(
-      'mr.muratozcan@gmail.com — or take a link from the signpost. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.\nhttps://www.linkedin.com/in/muratozc/\nhttps://github.com/MuratOzc/\nhttps://www.instagram.com/murtileyto/',
-      'mr.muratozcan@gmail.com — ya da tabeladan bir bağlantı seçin. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.\nhttps://www.linkedin.com/in/muratozc/\nhttps://github.com/MuratOzc/\nhttps://www.instagram.com/murtileyto/',
+      'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and press E. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
+      'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp E’ye basın. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
     ),
   },
 ];
