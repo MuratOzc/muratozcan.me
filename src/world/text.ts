@@ -104,10 +104,90 @@ export function makeArrowTexture(color = '#5c6b52'): Texture {
 }
 
 /**
+ * Break text to a width, at spaces where possible and mid-word where not.
+ *
+ * The mid-word fallback is the part that matters: without it a single token
+ * wider than the box (a URL, a long German-ish compound, a Turkish word that
+ * grew four suffixes) silently runs off the edge no matter how the caller
+ * measures the result.
+ */
+function wrapToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+
+  const flush = () => {
+    if (line) lines.push(line);
+    line = '';
+  };
+
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const joined = line ? `${line} ${word}` : word;
+    if (ctx.measureText(joined).width <= maxWidth) {
+      line = joined;
+      continue;
+    }
+    flush();
+    if (ctx.measureText(word).width <= maxWidth) {
+      line = word;
+      continue;
+    }
+    // Too long to fit on a line of its own: break it by characters.
+    for (const ch of word) {
+      if (ctx.measureText(line + ch).width > maxWidth && line) flush();
+      line += ch;
+    }
+  }
+  flush();
+  return lines;
+}
+
+interface FittedText {
+  lines: string[];
+  size: number;
+  lineHeight: number;
+}
+
+/**
+ * Largest font size at which `text` wraps into a box, and the wrap that goes
+ * with it. Steps down until it fits and stops at `min` — so the box is the
+ * constraint and the type gives way, never the other way round.
+ */
+function fitToBox(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  box: { width: number; height: number },
+  font: string,
+  max: number,
+  min: number,
+  lineRatio: number,
+): FittedText {
+  let fitted: FittedText | null = null;
+  for (let size = max; size >= min; size -= 2) {
+    ctx.font = font.replace('SIZE', String(size));
+    const lines = wrapToWidth(ctx, text, box.width);
+    const lineHeight = size * lineRatio;
+    fitted = { lines, size, lineHeight };
+    if (lines.length * lineHeight <= box.height) break;
+  }
+  // At `min` the wrap is still correct horizontally; only the height can have
+  // run out, and clipping a line is better than clipping a letter.
+  const f = fitted!;
+  ctx.font = font.replace('SIZE', String(f.size));
+  return f;
+}
+
+/**
  * An exhibition label: a number, a title, and a subtitle beneath.
  *
  * Drawn as one texture rather than three planes because a low sign read at an
  * angle wants the whole layout to foreshorten together.
+ *
+ * Nothing here is laid out at a fixed size. The title shrinks and wraps to the
+ * column beside the number, the subtitle block starts wherever the title
+ * actually ended, and both are measured against real boxes — so copy can be
+ * rewritten in either language without a sentence sliding off the board. Note
+ * that Turkish runs roughly 15% longer than English for the same sentence,
+ * which is exactly how the old fixed-size version came apart.
  */
 export function makeSignTexture(n: number, title: Localized, subtitle: Localized): Texture {
   return localizedCanvasTexture(1024, 384, (ctx, w, h) => {
@@ -117,43 +197,56 @@ export function makeSignTexture(n: number, title: Localized, subtitle: Localized
     ctx.fillRect(0, h - 10, w, 10);
 
     const pad = 44;
+    const MONO = 'ui-monospace, Consolas, monospace';
 
-    ctx.textBaseline = 'alphabetic';
+    ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
 
-    // Station number, set large and light in the corner.
+    // Station number, set large and light in its own column.
     ctx.fillStyle = '#b3aa96';
-    ctx.font = '700 132px ui-monospace, Consolas, monospace';
-    const num = String(n).padStart(2, '0');
-    ctx.fillText(num, pad, 148);
-    const numWidth = ctx.measureText(num).width;
-
-    const textLeft = pad + numWidth + 40;
-
-    ctx.fillStyle = '#20262c';
-    ctx.font = '600 84px ui-monospace, Consolas, monospace';
-    ctx.letterSpacing = '4px';
-    // upper(), not toUpperCase(): Turkish dots its capitals differently.
-    ctx.fillText(upper(t(title)), textLeft, 140);
-
+    ctx.font = `700 132px ${MONO}`;
     ctx.letterSpacing = '0px';
+    const num = String(n).padStart(2, '0');
+    ctx.fillText(num, pad, 34);
+    const textLeft = pad + ctx.measureText(num).width + 40;
+
+    // Title: beside the number, so its box is the remaining width.
+    const TITLE_TOP = 40;
+    ctx.letterSpacing = '4px';
+    const titleFit = fitToBox(
+      ctx,
+      // upper(), not toUpperCase(): Turkish dots its capitals differently.
+      upper(t(title)),
+      { width: w - textLeft - pad, height: 190 },
+      `600 SIZEpx ${MONO}`,
+      84,
+      44,
+      1.16,
+    );
+    ctx.fillStyle = '#20262c';
+    titleFit.lines.forEach((l, i) => {
+      ctx.fillText(l, textLeft, TITLE_TOP + i * titleFit.lineHeight);
+    });
+
+    // Subtitle: full width, starting below wherever the title ended.
+    const subTop = Math.max(
+      178,
+      TITLE_TOP + titleFit.lines.length * titleFit.lineHeight + 26,
+    );
+    ctx.letterSpacing = '0px';
+    const subFit = fitToBox(
+      ctx,
+      t(subtitle),
+      { width: w - pad * 2, height: h - 26 - subTop },
+      `400 SIZEpx ${MONO}`,
+      46,
+      24,
+      1.34,
+    );
     ctx.fillStyle = '#66707a';
-    ctx.font = '400 46px ui-monospace, Consolas, monospace';
-    // Wrap the subtitle across up to two lines.
-    const words = t(subtitle).split(' ');
-    const lines: string[] = [];
-    let line = '';
-    for (const word of words) {
-      const next = line ? `${line} ${word}` : word;
-      if (ctx.measureText(next).width > w - pad * 2 && line) {
-        lines.push(line);
-        line = word;
-      } else {
-        line = next;
-      }
-    }
-    if (line) lines.push(line);
-    lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, pad, 246 + i * 62));
+    subFit.lines.forEach((l, i) => {
+      ctx.fillText(l, pad, subTop + i * subFit.lineHeight);
+    });
   });
 }
 
