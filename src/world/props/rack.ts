@@ -16,10 +16,10 @@ import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
  * Station 7: infrastructure — an open rack standing in the grass, with the
  * cables running into the ground.
  *
- * The inventory is the real one: three machines, two Windows and one Linux.
- * The penguin is not a joke about the machine, it IS the machine. Their
- * activity lights blink, because the honest thing to show about infrastructure
- * is that it is always awake, and nobody is watching it but you.
+ * The inventory is the real one: three machines, two Windows and one Debian,
+ * each wearing its vendor's own badge. Their activity lights blink, because
+ * the honest thing to show about infrastructure is that it is always awake,
+ * and nobody is watching it but you.
  *
  * The blinking is one repainted canvas per box on a throttle, not per-LED
  * geometry: three textures beat sixty materials.
@@ -38,55 +38,63 @@ interface Panel {
   repaint: (t: number) => void;
 }
 
-function drawWindowsBadge(ctx: CanvasRenderingContext2D, x: number, y: number, s: number) {
-  ctx.fillStyle = '#4aa3df';
-  const g = s * 0.08;
-  const q = (s - g) / 2;
-  ctx.fillRect(x, y, q, q);
-  ctx.fillRect(x + q + g, y - s * 0.05, q, q);
-  ctx.fillRect(x, y + q + g, q, q);
-  ctx.fillRect(x + q + g, y + q + g - s * 0.05, q, q);
+/**
+ * `fill` is per-mark rather than one constant: the two files differ in aspect
+ * and in how much margin the artwork carries, so fitting both to the same box
+ * leaves the taller one looking like the smaller badge. These are the fractions
+ * at which the two read as the same weight on the plate.
+ */
+const BADGE_ART: Record<Exclude<Badge, 'none'>, { url: string; fill: number }> = {
+  windows: { url: '/images/w11.webp', fill: 0.70 },
+  linux: { url: '/images/debian.webp', fill: 0.86 },
+};
+
+/**
+ * The real marks, decoded once and shared by every panel that wants one.
+ *
+ * No load callback: the panels already repaint on a throttle, so a mark that
+ * has not decoded yet is simply absent from this repaint and present in the
+ * next one. Drawing an image that failed or has not arrived would throw, hence
+ * the completeness gate at the call site.
+ */
+const badgeArt = new Map<string, HTMLImageElement>();
+
+function badgeImage(badge: Exclude<Badge, 'none'>): HTMLImageElement {
+  let img = badgeArt.get(badge);
+  if (!img) {
+    img = new Image();
+    img.src = BADGE_ART[badge].url;
+    badgeArt.set(badge, img);
+  }
+  return img;
 }
 
-function drawPenguin(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  // Body
-  ctx.fillStyle = '#1c1c1c';
+/**
+ * An OEM badge: the vendor's mark on a light stamped plate, the way it is
+ * actually stuck on a chassis. The plate is what makes it legible — both marks
+ * are mid-tone on transparent, and this renderer crushes mid tones against a
+ * dark ground.
+ */
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  badge: Exclude<Badge, 'none'>,
+  cx: number,
+  cy: number,
+  s: number,
+) {
+  ctx.fillStyle = '#f0eee6';
   ctx.beginPath();
-  ctx.ellipse(cx, cy, s * 0.42, s * 0.5, 0, 0, Math.PI * 2);
+  ctx.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.16);
   ctx.fill();
-  // Head
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - s * 0.44, s * 0.3, s * 0.28, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Belly
-  ctx.fillStyle = '#f2f2ef';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy + s * 0.07, s * 0.3, s * 0.38, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Face
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - s * 0.4, s * 0.21, s * 0.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Eyes
-  ctx.fillStyle = '#1c1c1c';
-  for (const sx of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + sx * s * 0.1, cy - s * 0.46, s * 0.042, s * 0.06, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // Beak and feet
-  ctx.fillStyle = '#f0a830';
-  ctx.beginPath();
-  ctx.moveTo(cx - s * 0.1, cy - s * 0.34);
-  ctx.lineTo(cx + s * 0.1, cy - s * 0.34);
-  ctx.lineTo(cx, cy - s * 0.22);
-  ctx.closePath();
-  ctx.fill();
-  for (const sx of [-1, 1]) {
-    ctx.beginPath();
-    ctx.ellipse(cx + sx * s * 0.17, cy + s * 0.5, s * 0.13, s * 0.06, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+
+  const img = badgeImage(badge);
+  if (!img.complete || img.naturalWidth === 0) return;
+
+  const box = s * BADGE_ART[badge].fill;
+  const k = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+  const w = img.naturalWidth * k;
+  const h = img.naturalHeight * k;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
 }
 
 /**
@@ -134,14 +142,13 @@ function serverPanel(badge: Badge, seed: number): Panel {
     // Vent grille, right half
     ctx.fillStyle = '#3f464e';
     for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 14; c++) {
+      for (let c = 0; c < 12; c++) {
         ctx.fillRect(238 + c * 13, 26 + r * 16, 8, 10);
       }
     }
 
     // Badge
-    if (badge === 'windows') drawWindowsBadge(ctx, 424, 34, 56);
-    else if (badge === 'linux') drawPenguin(ctx, 452, 64, 52);
+    if (badge !== 'none') drawBadge(ctx, badge, 452, 64, 82);
 
     // Power light: steady. Network light: a nervous flicker.
     ctx.fillStyle = '#6fd3f7';
