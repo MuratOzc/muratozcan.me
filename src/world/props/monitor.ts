@@ -7,7 +7,9 @@ import {
   RGBAFormat,
   SRGBColorSpace,
   WebGLRenderTarget,
+  type BufferGeometry,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   HyperObject,
@@ -40,6 +42,37 @@ const FEED_H = 400;
 /** Screen size in authored units — matches the feed's 1.6 aspect. */
 const SCREEN_W = 1.04;
 const SCREEN_H = 0.65;
+
+/**
+ * Panel body, and where the screen sits.
+ *
+ * SCREEN_Y is eye level: the viewer is one authored unit tall, so 1.02 puts the
+ * centre of the picture straight ahead rather than overhead. The whole stand
+ * tops out at about 1.38 for that reason.
+ */
+const SCREEN_Y = 1.02;
+const TILT = -0.12;
+const BODY_W = SCREEN_W + 0.08;
+const BODY_H = SCREEN_H + 0.08;
+const BODY_T = 0.055;
+/** Panel-local z of the body's centre, and so of its back face. */
+const BODY_Z = -0.048;
+const BODY_BACK = BODY_Z - BODY_T / 2;
+
+const PAD_TOP = 0.09;
+const BASE_TOP = PAD_TOP + 0.07;
+/**
+ * The stand stands BEHIND the picture, and stops below it.
+ *
+ * Both halves of that are load-bearing. The post is offset to POST_Z so it can
+ * never share space with the screen plane, and POST_TOP is under the panel's
+ * lowest point — the tilt swings the panel's bottom edge forward and down, and
+ * a post that reaches into that band comes out through the front of the
+ * picture. Which is exactly what the previous version did: a vertical post on
+ * the screen's own axis, ending 0.06 ABOVE the panel's bottom edge.
+ */
+const POST_Z = -0.08;
+const POST_TOP = 0.56;
 
 export interface MonitorResult {
   object: HyperObject;
@@ -82,20 +115,24 @@ export function buildMonitor(
   warmUp.colorSpace = SRGBColorSpace;
   warmUp.needsUpdate = true;
 
-  // ---------------- the stand: base, tapered post, mount arm.
-  const base = new CylinderGeometry(0.34, 0.4, 0.07, 16);
-  base.translate(0, 0.035, 0);
+  // ---------------- paving. The base used to sit straight on the turf, which
+  // is not a flat surface here: every ground quad renders as a chord of the
+  // true curved surface and bulges up mid-quad, so a 0.07-tall base standing on
+  // it gets eaten from below. Everything with a footprint in this world stands
+  // on a slab for that reason.
+  const pad = new RoundedBoxGeometry(1.7, PAD_TOP, 1.3, 8, 0.02);
+  pad.translate(0, PAD_TOP / 2, POST_Z);
+  object.addGeometry(world.shared, pad, { color: 0xb0aea6, ambient: 0.62 });
+
+  // ---------------- the stand: base and tapered post, both behind the picture.
+  const base = new CylinderGeometry(0.3, 0.36, 0.07, 16);
+  base.translate(0, PAD_TOP + 0.035, POST_Z);
   object.addGeometry(world.shared, base, { color: DARK, ambient: 0.5 });
 
-  const POST_H = 1.32;
+  const POST_H = POST_TOP - BASE_TOP;
   const post = new CylinderGeometry(0.055, 0.075, POST_H, 14);
-  post.translate(0, 0.07 + POST_H / 2, 0);
+  post.translate(0, BASE_TOP + POST_H / 2, POST_Z);
   object.addGeometry(world.shared, post, { color: METAL, ambient: 0.55 });
-
-  const SCREEN_Y = 0.07 + POST_H + SCREEN_H / 2 - 0.06;
-  const arm = new RoundedBoxGeometry(0.1, 0.14, 0.18, 2, 0.02);
-  arm.translate(0, SCREEN_Y - 0.16, -0.06);
-  object.addGeometry(world.shared, arm, { color: METAL, ambient: 0.55 });
 
   // ---------------- the panel: a slim body, a bezel FRAME, and the screen.
   //
@@ -109,17 +146,35 @@ export function buildMonitor(
   // All panel parts are authored in panel-local coordinates, then tilted as
   // one rigid body and lifted to the mount, so the tilt cannot shear the
   // pieces apart.
-  const TILT = -0.1;
   const panelPart = (g: { rotateX: (a: number) => unknown; translate: (x: number, y: number, z: number) => unknown }) => {
     g.rotateX(TILT);
     g.translate(0, SCREEN_Y, 0);
     return g;
   };
 
-  const body = new RoundedBoxGeometry(SCREEN_W + 0.08, SCREEN_H + 0.08, 0.055, 6, 0.016);
-  body.translate(0, 0, -0.048);
+  const body = new RoundedBoxGeometry(BODY_W, BODY_H, BODY_T, 6, 0.016);
+  body.translate(0, 0, BODY_Z);
   panelPart(body);
   object.addGeometry(world.shared, body, { color: 0x8f979f, ambient: 0.5 });
+
+  // The mount: a plate flush to the body's back and a stem down to the post.
+  //
+  // Both go through panelPart, so they are authored against BODY_BACK in the
+  // panel's own frame. That is the point — a bracket positioned in world
+  // coordinates has to be re-derived through the tilt every time TILT or
+  // SCREEN_H changes, and getting that wrong is what puts a grey box through
+  // the front of the picture. Here the tilt applies to the joint as well, so
+  // the parts cannot come apart or come through.
+  const mount: BufferGeometry[] = [];
+  const plate = new RoundedBoxGeometry(0.28, 0.26, 0.032, 3, 0.01);
+  plate.translate(0, -0.2, BODY_BACK - 0.016);
+  mount.push(plate);
+  const stem = new RoundedBoxGeometry(0.11, 0.3, 0.13, 3, 0.018);
+  stem.translate(0, -0.36, BODY_BACK - 0.065);
+  mount.push(stem);
+  const merged = mergeGeometries(mount);
+  panelPart(merged);
+  object.addGeometry(world.shared, merged, { color: METAL, ambient: 0.52 });
 
   const BW = 0.026;
   for (const [dx, dy, w, h] of [
