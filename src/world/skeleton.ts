@@ -3,6 +3,7 @@ import { pathYaw, placeAlongPath, units, type Poi } from './placement';
 import { buildAisle } from './props/aisle';
 import { buildArch } from './props/arch';
 import { buildFigure as buildFigureProp, buildPlinth } from './props/figure';
+import { buildScatter } from './props/scatter';
 
 /**
  * The skeleton of the world.
@@ -48,6 +49,9 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
 
   // ------------------------------------------------------------- the aisle
   objects.push(...buildAisle(world));
+
+  // ------------------------------------------------------- the lawn's detail
+  objects.push(...buildScatter(world));
 
   // -------------------------------------------------------------- the arch
   const archAt = units(ARCH_AT);
