@@ -132,7 +132,7 @@ export function buildVault(
   brass.translate(SAFE_X, 0.1, SAFE_Z);
   object.addGeometry(world.shared, brass, { color: 0xc9cdd4, ambient: 0.55 });
 
-  const label = new PlaneGeometry(0.3, 0.11, 2, 1);
+  const label = new PlaneGeometry(0.3, 0.11, 1, 1);
   label.translate(-0.06, 0.68, 0.345);
   label.rotateY(TURN);
   label.translate(SAFE_X, 0.1, SAFE_Z);

@@ -228,7 +228,7 @@ export function buildChessTable(
     object.addGeometry(world.shared, bar, { color: 0x8a7460, ambient: 0.5 });
   }
 
-  const board = new PlaneGeometry(RIM - 0.04, RIM - 0.04, 4, 4);
+  const board = new PlaneGeometry(RIM - 0.04, RIM - 0.04, 1, 1);
   board.rotateX(-Math.PI / 2);
   board.translate(0, BOARD_Y, 0);
   object.addGeometry(world.shared, board, {

@@ -264,7 +264,7 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
     // The painted face. A decal proud of its backing, so it opts out of shadows
     // both ways: the map cannot resolve that sliver of depth and the slab would
     // otherwise cast a false shadow across the picture.
-    const face = new PlaneGeometry(w, h, 4, 4);
+    const face = new PlaneGeometry(w, h, 1, 1);
     face.translate(0, 0, CANVAS_T / 2 + 0.005);
     mount(face);
     object.addGeometry(world.shared, face, {

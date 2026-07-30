@@ -135,7 +135,7 @@ export function buildCabinets(
 
     // ---- the key-range plate, screwed to the top rail. This is what makes
     // the arrangement legible as an index rather than as furniture.
-    const plate = new PlaneGeometry(CAB_W * 0.72, 0.1, 3, 1);
+    const plate = new PlaneGeometry(CAB_W * 0.72, 0.1, 1, 1);
     plate.translate(x, 0.1 + CAB_H - 0.085, z + CAB_D / 2 + 0.006);
     object.addGeometry(world.shared, plate, {
       map: makeTextTexture(RANGES[c], {

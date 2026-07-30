@@ -101,7 +101,7 @@ export function buildSign(
   // The face. A decal a few millimetres proud of the board, so it must opt out
   // of shadow sampling in both directions: the map cannot resolve that sliver
   // of depth and the board behind would otherwise shadow the text.
-  const face = new PlaneGeometry(DECAL_W, DECAL_H, 6, 3);
+  const face = new PlaneGeometry(DECAL_W, DECAL_H, 1, 1);
   face.translate(0, 0, BOARD_T / 2 + 0.005);
   mount(face);
   object.addGeometry(world.shared, face, {

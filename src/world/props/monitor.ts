@@ -189,7 +189,7 @@ export function buildMonitor(
     object.addGeometry(world.shared, bar, { color: 0x4c545c, ambient: 0.45 });
   }
 
-  const screen = new PlaneGeometry(SCREEN_W, SCREEN_H, 4, 3);
+  const screen = new PlaneGeometry(SCREEN_W, SCREEN_H, 1, 1);
   panelPart(screen);
   const screenMats: HyperMaterial[] = object.addGeometry(world.shared, screen, {
     map: warmUp,

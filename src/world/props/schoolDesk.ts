@@ -214,7 +214,7 @@ export function buildSchoolDesk(
   bezel.translate(0, crtBase + 0.05 + 0.2, 0.225);
   object.addGeometry(world.shared, bezel, { color: 0xbfb8a6, ambient: 0.5 }, crtNode);
 
-  const screen = new PlaneGeometry(0.33, 0.26, 3, 3);
+  const screen = new PlaneGeometry(0.33, 0.26, 1, 1);
   screen.translate(0, crtBase + 0.05 + 0.2, 0.242);
   object.addGeometry(
     world.shared,

@@ -140,7 +140,7 @@ export function buildMailbox(
     plate.translate(FP_X, y, 0);
     object.addGeometry(world.shared, plate, { color: 0xe6dfd0, ambient: 0.62 });
 
-    const face = new PlaneGeometry(0.56, 0.115, 4, 1);
+    const face = new PlaneGeometry(0.56, 0.115, 1, 1);
     face.translate(0.36, 0, 0.017);
     face.rotateY(swing);
     face.translate(FP_X, y, 0);
