@@ -1,5 +1,6 @@
 import { type HyperWorld } from '../engine';
 import { STATIONS } from '../content/stations';
+import { EXHIBIT_LATERAL, SENTRIES } from './layout';
 import { facePath, placeAlongPath, units } from './placement';
 import { buildSign } from './props/sign';
 import { buildPlaceholderExhibit } from './props/placeholder';
@@ -24,9 +25,6 @@ import { buildLoneCamera } from './props/cameras';
  * with a placeholder pad standing in for everything not built yet.
  */
 
-/** Exhibit: set back, with room to read the sign without it in the way. */
-const EXHIBIT_LATERAL = 5.0;
-
 export type BuiltStations = Built;
 
 export function buildStations(world: HyperWorld): Built {
@@ -49,13 +47,6 @@ export function buildStations(world: HyperWorld): Built {
   // Cameras along the whole route, not only at the security station. Small and
   // easy to miss walking out; the intent is that you notice them coming back
   // and realise they have been following you the entire way.
-  // Two only. Any more and they stop reading as a detail you missed and start
-  // reading as set dressing. One near the start and one near the end means
-  // both get passed twice.
-  const SENTRIES: Array<[number, number]> = [
-    [13.0, -7.2],
-    [51.0, 7.6],
-  ];
   for (const [at, lateral] of SENTRIES) {
     const gv = placeAlongPath(units(at), units(lateral));
     const cam = buildLoneCamera(world, gv, facePath(at, lateral));

@@ -92,6 +92,26 @@ function groundGV(v: Vector3) {
   return placeOnGround(Math.atan2(v.x, -v.z), Math.acos(Math.max(-1, Math.min(1, v.y))));
 }
 
+/** Where one easel stands, as a ground-sphere unit vector. */
+function easelSpot(azimuth: number): Vector3 {
+  const a = (azimuth * Math.PI) / 180;
+  return POLE.clone()
+    .multiplyScalar(Math.cos(RING))
+    .addScaledVector(TANGENT_A, Math.sin(RING) * Math.cos(a))
+    .addScaledVector(TANGENT_B, Math.sin(RING) * Math.sin(a))
+    .normalize();
+}
+
+/** The three spots, and the pole they ring. Both read by the architecture
+ *  station's world model, which draws this ring on its globe. */
+export function easelSpots(): Vector3[] {
+  return EASELS.map((spec) => easelSpot(spec.azimuth));
+}
+
+export function easelPole(): Vector3 {
+  return POLE.clone();
+}
+
 /**
  * Yaw at `from` that points local -z at `to`.
  *
@@ -124,12 +144,7 @@ function strut(a: Vector3, b: Vector3, t: number): BufferGeometry {
 const loader = new TextureLoader();
 
 function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
-  const a = (spec.azimuth * Math.PI) / 180;
-  const spot = POLE.clone()
-    .multiplyScalar(Math.cos(RING))
-    .addScaledVector(TANGENT_A, Math.sin(RING) * Math.cos(a))
-    .addScaledVector(TANGENT_B, Math.sin(RING) * Math.sin(a))
-    .normalize();
+  const spot = easelSpot(spec.azimuth);
 
   const object = new HyperObject(groundGV(spot));
   // -z at the pole means +z, the painted face, points out of the ring.
