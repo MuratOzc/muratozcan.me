@@ -20,8 +20,8 @@ export const UI = {
   ),
 
   rotate: L(
-    'Best in landscape. Turn your phone sideways.',
-    'En iyisi yatay. Telefonunuzu yan çevirin.',
+    'Best viewed on a desktop. On a phone, best in landscape. Turn it sideways.',
+    'En iyisi bilgisayarda görüntülemek. İlla telefon diyorsanız telefonunuzu yan çevirin.',
   ),
   rotateDismiss: L('Continue anyway', 'Yine de devam et'),
 
