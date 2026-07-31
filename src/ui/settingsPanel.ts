@@ -130,8 +130,8 @@ function groups(): Group[] {
     {
       title: UI.groupDeveloper,
       rows: [
-        toggleRow(UI.showDetails, 'showDetails', UI.showDetailsNote),
-        toggleRow(UI.showTests, 'showTests', UI.showTestsNote),
+        toggleRow(UI.showDetails, 'showDetails'),
+        toggleRow(UI.showTests, 'showTests'),
       ],
     },
   ];
