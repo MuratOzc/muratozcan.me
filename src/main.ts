@@ -28,6 +28,7 @@ import { buildSkeleton } from './world/skeleton';
 import { buildStations } from './world/stations';
 import { makeTextTexture } from './world/text';
 import { done as loadingDone, setHint, stage, waitForAssets } from './ui/loading';
+import { attachFullscreenButton } from './ui/fullscreen';
 import { attachOrientationHint } from './ui/orientation';
 import { createSettingsPanel } from './ui/settingsPanel';
 import { attachTouchControls } from './ui/touch';
@@ -157,6 +158,7 @@ function buildGround(): void {
 async function boot(): Promise<void> {
   setHint(UI.loadingHint);
   attachOrientationHint();
+  attachFullscreenButton();
 
   await stage(UI.loadingWorld, 0.05);
   buildGround();

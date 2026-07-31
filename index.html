@@ -108,15 +108,17 @@
   #loading-hint { color: #444d57; max-width: 34ch; text-align: center; }
 
   /* -------------------------------------------------------- settings */
-  #settings-btn {
-    position: fixed; top: 10px; right: 10px; z-index: 12;
+  #settings-btn, #fullscreen-btn {
+    position: fixed; top: 10px; z-index: 12;
     width: 34px; height: 34px; padding: 0; cursor: pointer;
     display: grid; place-items: center;
     background: #0b0d10cc; border: 1px solid #2a3038; border-radius: 4px;
     color: #98a3ae; backdrop-filter: blur(4px);
   }
-  #settings-btn:hover { color: #7fd3f7; border-color: #39424e; }
-  #settings-btn svg { width: 17px; height: 17px; display: block; }
+  #settings-btn { right: 10px; }
+  #fullscreen-btn { right: 52px; }
+  #settings-btn:hover, #fullscreen-btn:hover { color: #7fd3f7; border-color: #39424e; }
+  #settings-btn svg, #fullscreen-btn svg { width: 17px; height: 17px; display: block; }
 
   #settings {
     position: fixed; inset: 0; z-index: 15;
@@ -248,7 +250,8 @@
   /* Coarse pointers get bigger hit targets and less chrome — the HUD and
      the test dump are unreadable at this width and are off by default. */
   @media (pointer: coarse) {
-    #settings-btn { width: 40px; height: 40px; }
+    #settings-btn, #fullscreen-btn { width: 40px; height: 40px; }
+    #fullscreen-btn { right: 58px; }
     canvas { cursor: default; }
   }
   /* Short viewport — a phone in landscape. There is not enough vertical room
@@ -288,6 +291,19 @@
       </svg>
     </div>
   </div>
+
+  <button id="fullscreen-btn" type="button" aria-label="Fullscreen" hidden>
+    <svg class="fs-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 9V4h5"></path><path d="M20 9V4h-5"></path>
+      <path d="M4 15v5h5"></path><path d="M20 15v5h-5"></path>
+    </svg>
+    <svg class="fs-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none">
+      <path d="M9 4v5H4"></path><path d="M15 4v5h5"></path>
+      <path d="M9 20v-5H4"></path><path d="M15 20v-5h5"></path>
+    </svg>
+  </button>
 
   <button id="settings-btn" type="button" aria-label="Settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"

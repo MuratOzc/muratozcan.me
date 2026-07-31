@@ -26,6 +26,8 @@ export const UI = {
   rotateDismiss: L('Continue anyway', 'Yine de devam et'),
 
   settings: L('Settings', 'Ayarlar'),
+  fullscreen: L('Fullscreen', 'Tam ekran'),
+  exitFullscreen: L('Exit fullscreen', 'Tam ekrandan çık'),
   reset: L('Reset to defaults', 'Varsayılanlara dön'),
 
   groupGeneral: L('General', 'Genel'),
