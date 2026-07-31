@@ -4,7 +4,7 @@ import {
   LinearMipmapLinearFilter,
   PlaneGeometry,
   Quaternion,
-  SRGBColorSpace,
+  NoColorSpace,
   TextureLoader,
   Vector3,
   type BufferGeometry,
@@ -55,9 +55,9 @@ interface EaselSpec {
 const RING = 0.14;
 
 const EASELS: EaselSpec[] = [
-  { azimuth: 90, maxW: 0.62, maxH: 0.8, url: '/images/easel1.png' },
-  { azimuth: 210, maxW: 0.44, maxH: 0.58, url: '/images/easel2.webp' },
-  { azimuth: 330, maxW: 0.55, maxH: 0.42, url: '/images/easel3.jpeg' },
+  { azimuth: 90, maxW: 1, maxH: 1, url: '/images/easel1.webp' },
+  { azimuth: 210, maxW: 1, maxH: 1, url: '/images/easel2.webp' },
+  { azimuth: 330, maxW: 1, maxH: 1, url: '/images/easel3.webp' },
 ];
 
 const WOOD = 0xb08a5e;
@@ -242,7 +242,7 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
   // of the wood when the lean, the box or the image changes.
   const cornerZ = ledgeZ0 + 0.112;
   loader.load(spec.url, (tex: Texture) => {
-    tex.colorSpace = SRGBColorSpace;
+    tex.colorSpace = NoColorSpace;
     tex.minFilter = LinearMipmapLinearFilter;
     tex.magFilter = LinearFilter;
     tex.anisotropy = 8;
