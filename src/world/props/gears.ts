@@ -299,13 +299,6 @@ export function buildGears(world: HyperWorld, at: GyroVector, yaw: number): Gear
   plinth.translate(0, 0.16, 0.08);
   object.addGeometry(world.shared, plinth, { color: 0x9a968c, ambient: 0.55 });
 
-  // Interior clear span: x within +-1.45, y within 0.28 to 2.79. The train's
-  // own extent is -1.326..1.339 and 0.373..2.732, so nothing meshes with the
-  // frame — the 32-tooth wheel's tip circle is the one that comes closest.
-  const plate = new RoundedBoxGeometry(2.9, 2.51, 0.07, 8, 0.01);
-  plate.translate(0, 1.535, -0.035);
-  object.addGeometry(world.shared, plate, { color: 0x3a3f45, ambient: 0.4 });
-
   const frame: BufferGeometry[] = [];
   for (const sx of [-1, 1]) {
     const post = new RoundedBoxGeometry(0.1, 2.68, 0.49, 4, 0.014);
@@ -342,28 +335,6 @@ export function buildGears(world: HyperWorld, at: GyroVector, yaw: number): Gear
       { color: TONES[g.layer][i % 2], ambient: LAYER_AMBIENT[g.layer] },
       g.node,
     );
-  });
-
-  // ---------------- the axles. One steel pin per shaft, reaching from the
-  // backing plate to just proud of the frontmost gear on it, so nothing in
-  // here reads as floating.
-  const shafts = new Map<string, number>();
-  for (const g of gears) {
-    const key = `${g.x.toFixed(4)},${g.y.toFixed(4)}`;
-    shafts.set(key, Math.max(shafts.get(key) ?? 0, g.layer));
-  }
-  const pins: BufferGeometry[] = [];
-  for (const [key, layer] of shafts) {
-    const [x, y] = key.split(',').map(Number);
-    const front = LAYER_Z[layer] + HALF_T + 0.035;
-    const pin = new CylinderGeometry(BORE * 0.94, BORE * 0.94, front, 10);
-    pin.rotateX(Math.PI / 2);
-    pin.translate(x, y, front / 2);
-    pins.push(pin.toNonIndexed());
-  }
-  object.addGeometry(world.shared, mergeGeometries(pins), {
-    color: 0x8b9298,
-    ambient: 0.48,
   });
 
   world.add(object);
