@@ -126,10 +126,13 @@ export class HyperWorld {
    * transition entirely. The shadow pass never tripped it because its light
    * camera renders a disjoint layer.
    *
-   * samples MUST match the canvas: the context is created with antialias, and
-   * a non-multisampled target changes 2% of output bytes.
+   * The target's samples, NOT the canvas's `antialias` flag, are the only
+   * multisampling the world gets — the canvas only ever draws one full-screen
+   * quad, which has no interior edges to resolve. Turning the setting off here
+   * really does turn antialiasing off, whatever the context was created with.
    */
   private viewTarget: WebGLRenderTarget;
+  private samples = 4;
   private blitScene = new Scene();
   private blitCamera = new Camera();
   private blitMaterial: ShaderMaterial;
@@ -159,17 +162,7 @@ export class HyperWorld {
     // nodes once per render() call — three times a frame on feed frames.
     this.scene.matrixWorldAutoUpdate = false;
 
-    this.viewTarget = new WebGLRenderTarget(1, 1, {
-      samples: 4,
-      depthBuffer: true,
-      stencilBuffer: false,
-    });
-    // Sampled and written back untouched. A raw GLSL3 shader gets no colour
-    // management injected, so leaving the texture unmanaged makes the blit an
-    // exact copy rather than a decode/encode round trip.
-    this.viewTarget.texture.colorSpace = NoColorSpace;
-    this.viewTarget.texture.minFilter = NearestFilter;
-    this.viewTarget.texture.magFilter = NearestFilter;
+    this.viewTarget = this.makeViewTarget();
 
     this.blitMaterial = new ShaderMaterial({
       glslVersion: GLSL3,
@@ -245,6 +238,39 @@ export class HyperWorld {
   setFov(deg: number): void {
     this.camera.fov = deg;
     this.camera.updateProjectionMatrix();
+  }
+
+  private makeViewTarget(): WebGLRenderTarget {
+    const target = new WebGLRenderTarget(1, 1, {
+      samples: this.samples,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    // Sampled and written back untouched. A raw GLSL3 shader gets no colour
+    // management injected, so leaving the texture unmanaged makes the blit an
+    // exact copy rather than a decode/encode round trip.
+    target.texture.colorSpace = NoColorSpace;
+    target.texture.minFilter = NearestFilter;
+    target.texture.magFilter = NearestFilter;
+    return target;
+  }
+
+  /**
+   * MSAA sample count for the world pass. 0 disables it.
+   *
+   * Rebuilt rather than mutated: `samples` is read when the target's
+   * framebuffer is set up, so assigning it to a live target changes the
+   * property and nothing else.
+   */
+  setSamples(samples: number): void {
+    if (samples === this.samples) return;
+    this.samples = samples;
+    const old = this.viewTarget;
+    this.viewTarget = this.makeViewTarget();
+    // The uniform holds the texture, not the target.
+    this.blitMaterial.uniforms.uView.value = this.viewTarget.texture;
+    old.dispose();
+    this.resize();
   }
 
   setPixelRatioCap(cap: number): void {

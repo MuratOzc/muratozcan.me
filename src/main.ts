@@ -210,6 +210,7 @@ async function boot(): Promise<void> {
 
     const q = QUALITY[s.quality];
     world.setPixelRatioCap(s.resolution);
+    world.setSamples(s.antialias);
     world.setShadowMapSize(q.shadowMapSize);
     world.setShadowsEnabled(q.shadows);
 

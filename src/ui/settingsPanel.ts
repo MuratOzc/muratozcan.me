@@ -1,6 +1,7 @@
 import { lang, onLangChange, setLang, t, type Lang, type Localized } from '../content/i18n';
 import { UI } from '../content/ui';
 import {
+  ANTIALIAS_OPTIONS,
   RESOLUTION_MAX,
   RESOLUTION_MIN,
   resetSettings,
@@ -125,6 +126,17 @@ function groups(): Group[] {
           format: (v) => `${v}×`,
           get: () => settings().resolution,
           set: (v) => setSetting('resolution', v),
+        },
+        {
+          kind: 'segmented',
+          label: UI.antialias,
+          note: UI.antialiasNote,
+          options: ANTIALIAS_OPTIONS.map((n) => ({
+            value: String(n),
+            label: n === 0 ? UI.antialiasOff : { en: `${n}×`, tr: `${n}×` },
+          })),
+          get: () => String(settings().antialias),
+          set: (v) => setSetting('antialias', Number(v)),
         },
         {
           kind: 'segmented',

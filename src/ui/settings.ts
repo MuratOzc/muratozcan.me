@@ -21,6 +21,8 @@ export interface Settings {
   quality: Quality;
   /** Upper bound on devicePixelRatio. Independent of `quality`. */
   resolution: number;
+  /** MSAA samples for the world pass. 0 is off. */
+  antialias: number;
   showHelp: boolean;
   showDetails: boolean;
   showTests: boolean;
@@ -28,6 +30,9 @@ export interface Settings {
 
 export const RESOLUTION_MIN = 0.5;
 export const RESOLUTION_MAX = 3;
+
+/** WebGL2 guarantees 4 samples; anything past that is not portable. */
+export const ANTIALIAS_OPTIONS = [0, 2, 4];
 
 export function defaults(): Settings {
   return {
@@ -43,6 +48,10 @@ export function defaults(): Settings {
     // this one's. 2 is the point past which a phone screen stops resolving the
     // difference and only the fill rate notices.
     resolution: 2,
+    // Halved on a phone because `resolution` above just gave it ~1.8x the
+    // pixels to fill, and MSAA multiplies whatever that costs. Edges an inch
+    // from your eye at 2x device pixels are already short on room to alias.
+    antialias: isTouch ? 2 : 4,
     showHelp: true,
     // Diagnostics, not content. Anyone who wants them knows where they are.
     showDetails: false,
@@ -73,6 +82,11 @@ function load(): Settings {
       RESOLUTION_MIN,
       Math.min(RESOLUTION_MAX, base.resolution),
     );
+    // A count the driver does not offer is not clamped, it is a broken
+    // framebuffer, so only the three the panel can produce are allowed back in.
+    if (!ANTIALIAS_OPTIONS.includes(base.antialias)) {
+      base.antialias = defaults().antialias;
+    }
   } catch {
     // Private browsing, or a corrupt blob. Defaults are always valid.
   }

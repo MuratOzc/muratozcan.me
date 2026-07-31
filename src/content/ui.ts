@@ -53,6 +53,12 @@ export const UI = {
     'Sets shadow detail. Drop it if the frame rate is uneven.',
     'Gölgelerin detaylarını belirler. Kare hızı düşükse bunu düşürün.',
   ),
+  antialias: L('Antialiasing', 'Kenar yumuşatma'),
+  antialiasOff: L('Off', 'Kapalı'),
+  antialiasNote: L(
+    'Smooths the jagged edges of distant geometry. Costs more the higher the resolution.',
+    'Uzaktaki nesnelerin tırtıklı kenarlarını yumuşatır. Çözünürlük arttıkça maliyeti artar.',
+  ),
   resolution: L('Resolution', 'Çözünürlük'),
   resolutionNote: L(
     'How many pixels are drawn per screen pixel. Higher is sharper and slower.',
