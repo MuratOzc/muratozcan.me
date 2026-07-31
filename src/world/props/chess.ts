@@ -345,22 +345,16 @@ function boardTexture(): Texture {
     for (let i = 0; i < 8; i++) {
       const along = m + (i + 0.5) * cell;
       // Each coordinate twice, the far pair upside down, so both players read
-      // their own edge the right way up.
+      // their own edge the right way up. That turn also carries the slot to the
+      // opposite end of its edge, so the far pair has to count back from h8.
       for (const flip of [0, Math.PI]) {
+        const j = flip === 0 ? i : 7 - i;
         ctx.save();
         ctx.translate(size / 2, size / 2);
         ctx.rotate(flip);
         ctx.translate(-size / 2, -size / 2);
-        ctx.save();
-        ctx.translate(along, size - m / 2);
-        ctx.rotate(flip);
-        ctx.fillText(FILES[i], 0, 0);
-        ctx.restore();
-        ctx.save();
-        ctx.translate(m / 2, size - m - (i + 0.5) * cell);
-        ctx.rotate(flip);
-        ctx.fillText(String(i + 1), 0, 0);
-        ctx.restore();
+        ctx.fillText(FILES[j], along, size - m / 2);
+        ctx.fillText(String(j + 1), m / 2, size - m - (i + 0.5) * cell);
         ctx.restore();
       }
     }
