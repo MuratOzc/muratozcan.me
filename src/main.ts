@@ -11,8 +11,10 @@ import {
 } from './engine';
 import {
   ANTIPODE_DISTANCE,
+  groundYaw,
   placeAlongPath,
   placeOnGround,
+  placeOnGroundVec,
   pathYaw,
   units,
   toUnits,
@@ -110,25 +112,38 @@ export function label(gv: GyroVector, title: string, body: string, radius = 0.25
 //
 // Each face must reach Klein 1.0 to cover its 45 degrees, which at
 // unitScale 0.1 means 10 authored units from the centre.
+//
+// THE CUBE IS TILTED, and has to be. Align a cube axis with spawn and its
+// opposite face lands on the antipode — which has no Poincare coordinate at
+// all, so that one tile can only be placed a hair short of where it belongs.
+// A hair is enough: the whole face slides sideways and opens a crack along one
+// edge while overlapping the opposite one. Tilting puts all six centres at
+// finite distances, so every face sits exactly where the cube says and the
+// seams close to machine precision.
+const CUBE_TILT_AXIS = new Vector3(1, 0, 1).normalize();
+const CUBE_TILT = 0.35;
+
 function buildGround(): void {
   const FACE_REACH = 1 / UNIT_SCALE;
   const groundGeo = new PlaneGeometry(FACE_REACH * 2, FACE_REACH * 2, 96, 96);
   groundGeo.rotateX(-Math.PI / 2);
 
-  const QUARTER = Math.PI / 2;
-  const GROUND_FACES: Array<[number, number]> = [
-    [0, 0],
-    [0, QUARTER],
-    [Math.PI, QUARTER],
-    [QUARTER, QUARTER],
-    [-QUARTER, QUARTER],
-    [0, Math.PI - 1e-3],
+  const axis = (x: number, y: number, z: number) =>
+    new Vector3(x, y, z).applyAxisAngle(CUBE_TILT_AXIS, CUBE_TILT);
+  const [ex, ey, ez] = [axis(1, 0, 0), axis(0, 1, 0), axis(0, 0, 1)];
+
+  // Each face is a cube axis, paired with one of the other two. The square is
+  // four-fold symmetric, so aiming the tile at either neighbouring axis lines
+  // its edges up with the cube — which is what makes the seams meet.
+  const FACES: Array<[Vector3, Vector3]> = [
+    [ex, ey], [ex.clone().negate(), ey],
+    [ey, ez], [ey.clone().negate(), ez],
+    [ez, ex], [ez.clone().negate(), ex],
   ];
 
-  for (const [bearing, distance] of GROUND_FACES) {
-    const tile = new HyperObject(
-      distance === 0 ? new GyroVector() : placeOnGround(bearing, distance),
-    );
+  for (const [normal, reference] of FACES) {
+    const tile = new HyperObject(placeOnGroundVec(normal));
+    tile.rotation.y = groundYaw(normal, reference);
     tile.addGeometry(world.shared, groundGeo, {
       color: 0x8ab967,
       ambient: 0.62,

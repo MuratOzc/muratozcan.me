@@ -52,6 +52,30 @@ export function placeOnGround(bearing: number, distance: number): GyroVector {
 }
 
 /**
+ * Place something at a point given as a unit vector on the ground sphere,
+ * where +y is spawn and the length of the xz part gives the bearing.
+ */
+export function placeOnGroundVec(v: Vector3): GyroVector {
+  return placeOnGround(
+    Math.atan2(v.x, -v.z),
+    Math.acos(Math.max(-1, Math.min(1, v.y))),
+  );
+}
+
+/**
+ * Yaw at ground point `from` that aims local -z at ground point `to`.
+ *
+ * Measured, not derived, for the same reason as {@link pathYaw}: a GyroVector
+ * built by translation carries a parallel-transported frame, so a thing placed
+ * away from spawn is not already pointing anywhere in particular.
+ */
+export function groundYaw(from: Vector3, to: Vector3): number {
+  const here = placeOnGroundVec(from);
+  const local = here.inverse().transformPoint(placeOnGroundVec(to).point());
+  return Math.atan2(-local.x, -local.z);
+}
+
+/**
  * Place something beside a path that runs from spawn along bearing 0.
  *
  * `along` is arc travelled down the path; `lateral` is perpendicular offset,
