@@ -34,8 +34,15 @@ const MOVE_ZONE = 0.45;
 const TAP_MS = 260;
 const TAP_SLOP = 12;
 
-/** Radians of look per CSS pixel dragged, before the sensitivity setting. */
-const LOOK_RATE = 0.0032;
+/**
+ * Radians of look per CSS pixel dragged, before the sensitivity setting.
+ *
+ * A thumb has a couple of centimetres of travel before it has to lift and
+ * reset; a mouse has a desk. Matching the desktop rate here meant three or
+ * four strokes to turn around, so the touch rate is 3x it and 1x on the
+ * slider is the value a phone should actually ship with.
+ */
+const LOOK_RATE = 0.0096;
 
 export function attachTouchControls(controls: Controls, canvas: HTMLElement): void {
   const layer = document.getElementById('touch') as HTMLDivElement;
