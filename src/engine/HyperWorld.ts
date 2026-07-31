@@ -57,6 +57,28 @@ export interface HyperWorldOptions {
 }
 
 /**
+ * A comparison depth texture in a render target: sampling it with
+ * sampler2DShadow gets the depth test plus bilinear percentage-closer
+ * filtering in hardware.
+ *
+ * Built fresh rather than resized. `WebGLRenderTarget.setSize` reconciles its
+ * colour attachments and drops the framebuffer, but the attached DepthTexture
+ * does not survive the round trip intact — after a resize the shadow term
+ * comes back wrong, and stays wrong, with every uniform still reading
+ * correctly. Allocating a new pair is a few megabytes on a settings change
+ * that happens by hand, which is a cheap price for a state that is always
+ * fully specified.
+ */
+function makeShadowTarget(size: number): WebGLRenderTarget {
+  const depthTex = new DepthTexture(size, size);
+  depthTex.type = UnsignedIntType;
+  depthTex.compareFunction = LessEqualCompare;
+  depthTex.minFilter = LinearFilter;
+  depthTex.magFilter = LinearFilter;
+  return new WebGLRenderTarget(size, size, { depthTexture: depthTex });
+}
+
+/**
  * The world root.
  *
  * The important structural idea, inherited from HyperEngine: **there is no
@@ -80,6 +102,17 @@ export class HyperWorld {
   private shadowTarget: WebGLRenderTarget | null = null;
   private lightCamera: OrthographicCamera | null = null;
   private shadowExtent = 0.5;
+  private shadowStrength = 0.9;
+  private shadowsActive = true;
+  private pixelRatioCap = 2;
+  /**
+   * Set whenever the shadow target is allocated, cleared once it has been
+   * drawn into. A depth texture that has never been attached to a framebuffer
+   * is an INCOMPLETE texture, and a draw call that samples one is undefined —
+   * in practice the geometry that samples it silently disappears. Skipping the
+   * shadow pass is therefore only safe once the map exists at all.
+   */
+  private shadowMapDirty = true;
 
   /**
    * The view is rendered here and blitted to the canvas, never drawn to the
@@ -171,14 +204,7 @@ export class HyperWorld {
       const size = opts.shadowMapSize ?? 4096;
       this.shadowExtent = opts.shadowExtent ?? 1.0;
 
-      // A comparison depth texture: sampling it with sampler2DShadow gets the
-      // depth test plus bilinear percentage-closer filtering in hardware.
-      const depthTex = new DepthTexture(size, size);
-      depthTex.type = UnsignedIntType;
-      depthTex.compareFunction = LessEqualCompare;
-      depthTex.minFilter = LinearFilter;
-      depthTex.magFilter = LinearFilter;
-      this.shadowTarget = new WebGLRenderTarget(size, size, { depthTexture: depthTex });
+      this.shadowTarget = makeShadowTarget(size);
 
       this.lightCamera = new OrthographicCamera();
       this.lightCamera.layers.set(SHADOW_LAYER);
@@ -188,7 +214,8 @@ export class HyperWorld {
       // scales with the depth range (3.5 * extent) — this default matches the
       // contact tightness the old 0.5-extent map had at bias 0.0025.
       this.shared.uShadowBias.value = opts.shadowBias ?? 0.0013;
-      this.shared.uShadowStrength.value = opts.shadowStrength ?? 0.9;
+      this.shadowStrength = opts.shadowStrength ?? 0.9;
+      this.shared.uShadowStrength.value = this.shadowStrength;
       // Depth-pass fragments beyond twice the extent are discarded — that is
       // comfortably outside the map while killing far-hemisphere geometry
       // whose chart coordinates have blown up.
@@ -213,6 +240,44 @@ export class HyperWorld {
 
   setLightDirection(dir: Vector3): void {
     this.shared.uLightDir.value.copy(dir).normalize();
+  }
+
+  setFov(deg: number): void {
+    this.camera.fov = deg;
+    this.camera.updateProjectionMatrix();
+  }
+
+  setPixelRatioCap(cap: number): void {
+    if (cap === this.pixelRatioCap) return;
+    this.pixelRatioCap = cap;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, cap));
+    this.resize();
+  }
+
+  /**
+   * Turn the shadow pass on or off at runtime.
+   *
+   * The materials keep their USE_SHADOWMAP define either way — dropping it
+   * would mean recompiling every shader in the world on a settings change.
+   * Zeroing the strength makes the shader's shadow term return exactly 1.0, so
+   * the depth pass can then be skipped outright and its stale map never shows.
+   */
+  setShadowsEnabled(on: boolean): void {
+    this.shadowsActive = on;
+    this.shared.uShadowStrength.value = on ? this.shadowStrength : 0;
+  }
+
+  setShadowMapSize(size: number): void {
+    if (!this.shadowTarget || this.shadowTarget.width === size) return;
+    const old = this.shadowTarget;
+    this.shadowTarget = makeShadowTarget(size);
+    // The uniform holds the texture, not the target, so it has to be re-pointed
+    // before anything samples it.
+    this.shared.uShadowMap.value = this.shadowTarget.depthTexture;
+    this.shared.uShadowTexel.value = 1 / size;
+    this.shadowMapDirty = true;
+    old.depthTexture?.dispose();
+    old.dispose();
   }
 
   resize(): void {
@@ -240,7 +305,13 @@ export class HyperWorld {
     this.shared.uUnitScale.value = HM.unitScale;
     for (const obj of this.objects) obj.updateHyper(this.worldGV);
     this.syncMatrices();
-    if (this.shadowTarget && this.lightCamera) this.renderShadowMap();
+    // Drawn when shadows are on, and once more after any reallocation even if
+    // they are off — see shadowMapDirty. The one extra pass is the price of
+    // never binding an incomplete texture.
+    if (this.shadowTarget && this.lightCamera && (this.shadowsActive || this.shadowMapDirty)) {
+      this.renderShadowMap();
+      this.shadowMapDirty = false;
+    }
 
     this.renderer.setRenderTarget(this.viewTarget);
     this.renderer.render(this.scene, this.camera);

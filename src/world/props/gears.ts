@@ -1,4 +1,4 @@
-import { BufferGeometry, CylinderGeometry, Float32BufferAttribute, Group } from 'three';
+import { BufferGeometry, Float32BufferAttribute, Group } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';

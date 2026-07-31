@@ -1,6 +1,7 @@
 import {
   CanvasTexture,
   CylinderGeometry,
+  DefaultLoadingManager,
   LinearFilter,
   LinearMipmapLinearFilter,
   PlaneGeometry,
@@ -63,7 +64,15 @@ function badgeImage(badge: Exclude<Badge, 'none'>): HTMLImageElement {
   let img = badgeArt.get(badge);
   if (!img) {
     img = new Image();
-    img.src = BADGE_ART[badge].url;
+    // Reported to Three's default manager even though this is a raw Image and
+    // not a loader: it is what the loading screen counts, and a badge that
+    // arrives after the curtain lifts pops in visibly.
+    const url = BADGE_ART[badge].url;
+    DefaultLoadingManager.itemStart(url);
+    const settle = () => DefaultLoadingManager.itemEnd(url);
+    img.addEventListener('load', settle, { once: true });
+    img.addEventListener('error', settle, { once: true });
+    img.src = url;
     badgeArt.set(badge, img);
   }
   return img;

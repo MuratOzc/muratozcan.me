@@ -1,4 +1,5 @@
 import { L, type Localized } from './i18n';
+import { isTouch } from '../device';
 
 /**
  * The stations along the path.
@@ -136,10 +137,17 @@ const DEFS: StationDef[] = [
     id: 'contact',
     title: L('Contact', 'İletişim'),
     object: L('four turning marks, and a mailbox', 'dönen dört işaret ve bir posta kutusu'),
-    body: L(
-      'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and press E. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
-      'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp E’ye basın. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
-    ),
+    // The gesture differs by device, so the sentence names the one the reader
+    // actually has. Everything else about the station is identical.
+    body: isTouch
+      ? L(
+          'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and tap. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
+          'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp dokunun. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
+        )
+      : L(
+          'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and press E. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
+          'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp E’ye basın. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
+        ),
   },
 ];
 

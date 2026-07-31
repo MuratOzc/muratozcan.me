@@ -1,4 +1,4 @@
-import { Euler, Quaternion, Vector3 } from 'three';
+import { Euler, Quaternion, Vector2, Vector3 } from 'three';
 import type { HyperWorld } from './HyperWorld';
 import { geodesicTranslate, heightAboveGround } from './math/coords';
 import { GyroVector } from './math/gyrovector';
@@ -26,7 +26,13 @@ export interface ControlsOptions {
   smoothTime?: number;
   /** Head bob amplitude as a fraction of eye height. 0 disables it. */
   headBob?: number;
+  /**
+   * Fly mode has no key bound to it and no entry in settings — it exists for
+   * authoring from the console (`demo.controls.mode = 'fly'`). Visitors walk.
+   */
   mode?: 'walk' | 'fly';
+  /** Whether a click should grab the pointer. Off for touch. */
+  pointerLock?: boolean;
 }
 
 /**
@@ -44,6 +50,11 @@ export interface ControlsOptions {
  *    not stay parallel to the ground — walking "straight" drifts you off it.
  *    Measured over a full lap the drift is only a few percent here, but it
  *    accumulates, so walk mode pins the height every frame instead of hoping.
+ *
+ * Eye height is fixed. It used to be raised and lowered with Space and Shift,
+ * which let a visitor end up sunk in the ground or floating over it with no
+ * indication of how to get back — the reset was undiscoverable and the state
+ * looked like a bug. Walking is the only way to move now.
  */
 export class Controls {
   eyeHeight: number;
@@ -53,12 +64,28 @@ export class Controls {
   smoothTime: number;
   headBob: number;
   mode: 'walk' | 'fly';
+  pointerLock: boolean;
 
   turnSpeed: number;
   maxMouseDelta: number;
 
   yaw = 0;
   pitch = 0;
+
+  /** User multiplier over mouse and touch look. 1 is the tuned default. */
+  sensitivityScale = 1;
+  invertLook = false;
+
+  /**
+   * Analog movement from the touch layer: x strafes right, y walks forward,
+   * each -1..1. Summed with the keyboard, so a keyboard and a thumbstick can
+   * drive the same viewer without either knowing about the other.
+   */
+  readonly moveInput = new Vector2();
+  sprintInput = false;
+
+  /** Cleared and ignored while a modal (the settings panel) is open. */
+  inputEnabled = true;
 
   /**
    * How many mouse events have been rejected as spurious. Surfaced so a jump
@@ -98,14 +125,15 @@ export class Controls {
     this.smoothTime = opts.smoothTime ?? 0.09;
     this.headBob = opts.headBob ?? 0.018;
     this.mode = opts.mode ?? 'walk';
+    this.pointerLock = opts.pointerLock ?? true;
     this.attach();
   }
 
   private attach(): void {
     addEventListener('keydown', (e) => {
+      if (!this.inputEnabled) return;
       this.keys.add(e.code);
-      if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-      if (e.code === 'KeyF') this.mode = this.mode === 'walk' ? 'fly' : 'walk';
+      if (e.code.startsWith('Arrow')) e.preventDefault();
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => {
@@ -113,7 +141,9 @@ export class Controls {
       this.velocity.set(0, 0, 0);
     });
 
-    this.element.addEventListener('click', () => this.element.requestPointerLock());
+    this.element.addEventListener('click', () => {
+      if (this.pointerLock && this.inputEnabled) this.element.requestPointerLock();
+    });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.element;
       // The first event after lock engages routinely carries a delta measured
@@ -143,14 +173,31 @@ export class Controls {
         return;
       }
 
-      this.yaw -= dx * this.lookSensitivity;
-      this.pitch -= dy * this.lookSensitivity;
-      this.clampPitch();
+      this.lookBy(-dx * this.lookSensitivity, -dy * this.lookSensitivity);
     });
+  }
+
+  /**
+   * Turn the view by an amount already expressed in radians. The single point
+   * where the sensitivity multiplier and the invert setting are applied, so
+   * mouse and touch cannot drift out of agreement.
+   */
+  lookBy(dyaw: number, dpitch: number): void {
+    if (!this.inputEnabled) return;
+    this.yaw += dyaw * this.sensitivityScale;
+    this.pitch += dpitch * this.sensitivityScale * (this.invertLook ? -1 : 1);
+    this.clampPitch();
   }
 
   get isLocked(): boolean {
     return this.locked;
+  }
+
+  /** Drop every held input. Called when a modal takes over. */
+  releaseInput(): void {
+    this.keys.clear();
+    this.moveInput.set(0, 0);
+    this.sprintInput = false;
   }
 
   /** Current height above the ground, in radians. */
@@ -199,23 +246,12 @@ export class Controls {
     if (this.keys.has('KeyS')) input.z += 1;
     if (this.keys.has('KeyA')) input.x -= 1;
     if (this.keys.has('KeyD')) input.x += 1;
+    input.x += this.moveInput.x;
+    input.z -= this.moveInput.y;
 
-    // Vertical. In walk mode this raises or lowers the height the viewer is
-    // pinned to, so you stay where you left off rather than sinking back.
-    let rise = 0;
-    if (this.keys.has('Space')) rise += 1;
-    if (this.keys.has('ShiftLeft') || this.keys.has('ControlLeft')) rise -= 1;
-
-    const sprint = this.keys.has('KeyR') ? this.sprintMultiplier : 1;
-    const metresPerSecond = this.speed * this.eyeHeight * sprint;
-
-    if (walking && rise !== 0) {
-      this.eyeHeight = Math.max(
-        0.012,
-        Math.min(1.4, this.eyeHeight + rise * metresPerSecond * dt),
-      );
-    }
-    if (!walking) input.y = rise;
+    const sprinting =
+      this.sprintInput || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+    const metresPerSecond = this.speed * this.eyeHeight * (sprinting ? this.sprintMultiplier : 1);
 
     // Walking uses yaw only, so looking up does not lift you off the ground.
     // Flying uses the full look rotation.
@@ -228,8 +264,16 @@ export class Controls {
     }
 
     const wish = new Vector3();
-    if (input.lengthSq() > 0) {
-      wish.copy(input).normalize().applyQuaternion(frame).multiplyScalar(metresPerSecond);
+    const push = input.length();
+    if (push > 0) {
+      // Clamped, not normalized: the keyboard always pushes at full length
+      // anyway, and normalizing would throw away the thumbstick's analog
+      // magnitude — every touch input would read as a full-speed run.
+      wish
+        .copy(input)
+        .multiplyScalar(Math.min(1, push) / push)
+        .applyQuaternion(frame)
+        .multiplyScalar(metresPerSecond);
     }
 
     // Exponential approach — frame-rate independent, unlike a raw lerp factor.

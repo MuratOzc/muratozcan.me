@@ -16,6 +16,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { L, t, onLangChange } from '../../content/i18n';
+import { isTouch } from '../../device';
 import { makeIconTexture, type IconName } from '../icons';
 import { units } from '../placement';
 
@@ -167,7 +168,10 @@ function openLink(href: string): void {
   a.remove();
 }
 
-const PROMPT = L('press E', 'E’ye bas');
+// There is no E to press on a phone. The touch layer delivers interact as a
+// synthetic KeyE so this file needs only one code path, but the visitor must
+// be told the gesture they actually have.
+const PROMPT = isTouch ? L('tap', 'dokun') : L('press E', 'E’ye bas');
 
 export interface ContactResult {
   object: HyperObject;

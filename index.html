@@ -2,11 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
 <title>Murat Özcan</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; }
-  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden; background: #0b0d10;
+    overscroll-behavior: none; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
   .panel {
     position: fixed; padding: 10px 12px; white-space: pre;
     background: #0b0d10cc; border: 1px solid #2a3038; border-radius: 4px;
@@ -15,12 +21,11 @@
   }
   #hud { top: 10px; left: 10px; pointer-events: none; }
   #tests { bottom: 10px; left: 10px; max-width: 62ch; white-space: pre-wrap; }
-  #lang { top: 10px; right: 10px; cursor: pointer; user-select: none; }
-  #lang span { color: #66707a; }
-  #lang span.active { color: #7fd3f7; font-weight: 600; }
-  #help { top: 58px; right: 10px; pointer-events: none; }
+  /* Clears the settings button, which owns the top-right corner. */
+  #help { top: 54px; right: 10px; pointer-events: none; }
   b { color: #7fd3f7; font-weight: 600; }
   .pass { color: #7ee787; } .fail { color: #ff7b72; }
+  [hidden] { display: none !important; }
 
   #crosshair {
     position: fixed; left: 50%; top: 50%;
@@ -57,27 +62,271 @@
     letter-spacing: .1em; color: #e2c98d; opacity: 0;
     transition: opacity .12s ease-out;
   }
+
+  /* ----------------------------------------------------------- loading
+     Static markup on purpose. The bundle is ~680 kB and the world is built
+     synchronously once it parses, so anything created from JS would appear
+     only after the wait it is meant to cover. */
+  #loading {
+    position: fixed; inset: 0; z-index: 20;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 26px;
+    background: #0b0d10; color: #d8dee9;
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    transition: opacity .5s ease-out;
+  }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading-name {
+    font-size: 15px; letter-spacing: .34em; text-transform: uppercase;
+    color: #e9eef3; padding-left: .34em;
+  }
+  #loading-bar {
+    width: min(260px, 56vw); height: 2px; background: #222932; overflow: hidden;
+  }
+  /* scaleX, not width: the world is built on the main thread in long
+     synchronous blocks, and a width transition needs that thread to animate.
+     A transform runs on the compositor, so the bar keeps moving through a
+     stage instead of freezing until it ends. */
+  #loading-fill {
+    width: 100%; height: 100%; background: #7fd3f7;
+    transform: scaleX(0); transform-origin: left center;
+    transition: transform .45s ease-out;
+  }
+  /* Until the bundle parses there is no progress to report, and a bar frozen
+     at zero reads as a hang. The sweep is dropped the moment a real stage
+     lands. */
+  #loading-bar.indeterminate #loading-fill { display: none; }
+  #loading-bar.indeterminate::after {
+    content: ''; display: block; height: 100%; width: 34%;
+    background: #7fd3f7; animation: sweep 1.15s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(294%); }
+  }
+  #loading-status { color: #66707a; letter-spacing: .12em; min-height: 1.6em; }
+  #loading-hint { color: #444d57; max-width: 34ch; text-align: center; }
+
+  /* -------------------------------------------------------- settings */
+  #settings-btn {
+    position: fixed; top: 10px; right: 10px; z-index: 12;
+    width: 34px; height: 34px; padding: 0; cursor: pointer;
+    display: grid; place-items: center;
+    background: #0b0d10cc; border: 1px solid #2a3038; border-radius: 4px;
+    color: #98a3ae; backdrop-filter: blur(4px);
+  }
+  #settings-btn:hover { color: #7fd3f7; border-color: #39424e; }
+  #settings-btn svg { width: 17px; height: 17px; display: block; }
+
+  #settings {
+    position: fixed; inset: 0; z-index: 15;
+    display: grid; place-items: center;
+    background: #05070ac4; backdrop-filter: blur(3px);
+    font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  #settings-card {
+    width: min(420px, calc(100vw - 32px));
+    max-height: min(560px, calc(100dvh - 32px));
+    overflow-y: auto; overscroll-behavior: contain;
+    background: #0d1015; border: 1px solid #2a3038; border-radius: 6px;
+    color: #c9d3dd;
+  }
+  #settings h2 {
+    margin: 0; padding: 15px 18px; font-size: 12px; font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase; color: #7fd3f7;
+    border-bottom: 1px solid #1c222a;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #settings-close {
+    background: none; border: none; color: #66707a; cursor: pointer;
+    font: inherit; font-size: 17px; line-height: 1; padding: 0 2px;
+  }
+  #settings-close:hover { color: #ff7b72; }
+  .set-group {
+    padding: 6px 18px 12px;
+    border-bottom: 1px solid #1c222a;
+  }
+  .set-group:last-child { border-bottom: none; }
+  .set-group > h3 {
+    margin: 12px 0 8px; font-size: 11px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: #59636e;
+  }
+  .set-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 7px 0;
+  }
+  .set-row label { color: #b3bec9; flex: 1; cursor: pointer; }
+  .set-row .set-value {
+    color: #7fd3f7; font-variant-numeric: tabular-nums;
+    min-width: 4ch; text-align: right;
+  }
+  .set-seg { display: flex; border: 1px solid #2a3038; border-radius: 4px; overflow: hidden; }
+  .set-seg button {
+    background: none; border: none; cursor: pointer; font: inherit;
+    padding: 4px 11px; color: #6d7883;
+  }
+  .set-seg button + button { border-left: 1px solid #2a3038; }
+  .set-seg button:hover { color: #b3bec9; }
+  .set-seg button.active { background: #7fd3f71c; color: #7fd3f7; font-weight: 600; }
+  .set-row input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 140px; height: 2px; background: #2a3038; outline: none;
+  }
+  .set-row input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #7fd3f7; cursor: pointer;
+  }
+  .set-row input[type=range]::-moz-range-thumb {
+    width: 13px; height: 13px; border: none; border-radius: 50%;
+    background: #7fd3f7; cursor: pointer;
+  }
+  .set-switch {
+    width: 38px; height: 20px; flex: none; padding: 0; cursor: pointer;
+    background: #20262e; border: 1px solid #2a3038; border-radius: 10px;
+    position: relative; transition: background .15s;
+  }
+  .set-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #6d7883; transition: transform .15s, background .15s;
+  }
+  .set-switch[aria-checked=true] { background: #7fd3f72e; border-color: #7fd3f766; }
+  .set-switch[aria-checked=true]::after { transform: translateX(18px); background: #7fd3f7; }
+  .set-note { margin: 2px 0 0; color: #4e5761; font-size: 11px; line-height: 1.5; }
+  #settings-reset {
+    margin: 14px 18px 18px; padding: 7px 12px; cursor: pointer;
+    background: none; border: 1px solid #2a3038; border-radius: 4px;
+    color: #6d7883; font: inherit;
+  }
+  #settings-reset:hover { color: #ff7b72; border-color: #ff7b7255; }
+
+  /* ---------------------------------------------------------- touch
+     Twin-stick. The joystick base is placed where the thumb lands rather
+     than pinned to a corner, which is the difference between reachable and
+     not across the range of hand sizes and phone widths. */
+  #touch { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+  #stick {
+    position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px;
+    border: 1px solid #e9eef33d; border-radius: 50%;
+    background: #0b0d1052; opacity: 0; transition: opacity .18s;
+  }
+  #stick.live { opacity: 1; }
+  #stick-knob {
+    position: absolute; left: 50%; top: 50%;
+    width: 46px; height: 46px; margin: -23px 0 0 -23px;
+    border-radius: 50%; background: #e9eef370;
+    border: 1px solid #e9eef38a;
+  }
+  /* Hold to sprint. Deliberately NOT pointer-events:auto — the canvas owns
+     the gesture, so the same thumb that presses it can slide off and keep
+     looking around instead of being trapped on a button. */
+  #sprint {
+    position: absolute; right: 22px; bottom: 22px;
+    width: 66px; height: 66px; display: grid; place-items: center;
+    border: 1px solid #e9eef33d; border-radius: 50%;
+    background: #0b0d1052; color: #e9eef3a8;
+  }
+  #sprint svg { width: 24px; height: 24px; }
+  #sprint.held { border-color: #e2c98d; background: #e2c98d33; color: #e2c98d; }
+
+  /* ------------------------------------------------------ orientation */
+  #rotate {
+    position: fixed; inset: 0; z-index: 18;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px;
+    background: #0b0d10f2; color: #98a3ae; text-align: center; padding: 24px;
+    font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  #rotate svg { width: 46px; height: 46px; color: #7fd3f7; }
+  #rotate-dismiss {
+    margin-top: 6px; padding: 8px 16px; cursor: pointer;
+    background: none; border: 1px solid #2a3038; border-radius: 4px;
+    color: #6d7883; font: inherit;
+  }
+
+  /* Coarse pointers get bigger hit targets and less chrome — the HUD and
+     the test dump are unreadable at this width and are off by default. */
+  @media (pointer: coarse) {
+    #settings-btn { width: 40px; height: 40px; }
+    canvas { cursor: default; }
+  }
+  /* Short viewport — a phone in landscape. There is not enough vertical room
+     for a bottom-anchored proximity panel and a centred aim prompt to both
+     stay clear of each other, so the prompt moves ABOVE the crosshair and the
+     panel hugs the bottom edge. They grow away from one another instead of
+     toward the same band of screen. */
+  @media (max-height: 560px) {
+    #help { font-size: 11px; padding: 7px 9px; }
+    #tests { display: none; }
+    .aim-prompt { top: auto; bottom: calc(50% + 22px); }
+    .proximity-panel {
+      bottom: 10px; padding: 9px 14px; font-size: 12px; line-height: 1.5;
+      /* Narrow enough to clear the sprint button in the bottom-right. */
+      max-width: min(52ch, 62vw);
+    }
+    .proximity-panel h2 { font-size: 11px; margin-bottom: 2px; }
+  }
+  @media (max-height: 460px) {
+    #sprint { width: 56px; height: 56px; right: 16px; bottom: 16px; }
+  }
 </style>
 </head>
 <body>
   <canvas id="view"></canvas>
   <div id="crosshair"></div>
-  <div class="panel" id="lang"><span data-l="en">EN</span> · <span data-l="tr">TR</span></div>
   <div class="panel" id="hud"></div>
   <div class="panel" id="tests"></div>
-  <div class="panel" id="help">click to look
-WASD   move
-Space  rise
-Shift  lower
-R      sprint
-E      interact
-F      walk / fly
-&larr; &rarr;    turn
-&uarr; &darr;    look up/down
+  <div class="panel" id="help"></div>
 
-walk straight ahead long
-enough and you return
-to where you started</div>
+  <div id="touch" hidden>
+    <div id="stick"><div id="stick-knob"></div></div>
+    <div id="sprint" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l6 6-6 6"></path><path d="M13 6l6 6-6 6"></path>
+      </svg>
+    </div>
+  </div>
+
+  <button id="settings-btn" type="button" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+
+  <div id="settings" hidden>
+    <div id="settings-card">
+      <h2><span id="settings-title">Settings</span><button id="settings-close" type="button" aria-label="Close">&times;</button></h2>
+      <div id="settings-body"></div>
+      <button id="settings-reset" type="button">Reset</button>
+    </div>
+  </div>
+
+  <div id="rotate" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2" y="7" width="20" height="10" rx="2"></rect>
+      <path d="M9 3.5A6 6 0 0 1 15 3.5"></path>
+      <path d="M14 1.8 15.2 3.6 13.3 4.6"></path>
+    </svg>
+    <p id="rotate-text">Turn your phone sideways.</p>
+    <button id="rotate-dismiss" type="button">Continue anyway</button>
+  </div>
+
+  <div id="loading">
+    <div id="loading-name">Murat Özcan</div>
+    <div id="loading-bar" class="indeterminate"><div id="loading-fill"></div></div>
+    <!-- Static text, replaced by the first build stage. Without it the screen
+         reads as a bare name and a dead bar for the whole bundle download,
+         which is the longest part of the wait and the only part JS cannot
+         narrate. -->
+    <div id="loading-status">loading…</div>
+    <div id="loading-hint"></div>
+  </div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
