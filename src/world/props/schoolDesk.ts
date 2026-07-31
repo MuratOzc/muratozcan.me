@@ -1,31 +1,65 @@
 import { CylinderGeometry, Group, PlaneGeometry } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
-import { L, t, type Localized } from '../../content/i18n';
 import { localizedCanvasTexture } from '../text';
 
 /**
  * Station 2: maths and computers.
  *
- * A school desk with a CRT on it and a chalkboard behind. The board shows the
- * spherical Pythagoras — cos r = cos a · cos b — which is not set dressing:
- * it is the literal equation in placement.ts that positions every object in
- * this world, this board included. The one formula from school that turned
- * out to be load-bearing.
+ * A school desk with a CRT on it and a chalkboard behind. Every line on the
+ * board is load-bearing rather than set dressing — spherical Pythagoras and
+ * the bearing beside it are the literal arithmetic in placement.ts that puts
+ * every object in this world where it is, this board included, and the rest
+ * are the invariants the engine self-tests hold the renderer to. If a formula
+ * here were wrong the world would be too.
+ *
+ * No prose, nothing level, nothing at one size: a board somebody worked on,
+ * not a poster. Which also means it needs no translation.
  *
  * Layout: the board and the desk are two separately-angled nodes, staggered
  * so that from the path you read the whole board with the desk beside it —
  * nothing stands in front of anything.
  */
 
-const CAPTION: Localized = L(
-  'spherical pythagoras — this world runs on it',
-  'küresel pisagor — bu dünya bununla çalışıyor',
-);
-const SCHOOL: Localized = L(
-  'Yıldız Technical University · Mathematical Engineering · 2018–2024',
-  'Yıldız Teknik Üniversitesi · Matematik Mühendisliği · 2018–2024',
-);
+interface Chalk {
+  text: string;
+  /** Left edge and centre line, in texture pixels. */
+  x: number;
+  y: number;
+  size: number;
+  /** Radians of tilt. Nothing on a real board is level. */
+  rot: number;
+  /** Chalk that went on lighter, or has been leaned on since. */
+  tone?: string;
+  underline?: boolean;
+  ring?: boolean;
+}
+
+/**
+ * Angle letters and side letters are kept apart on purpose: α β γ are always
+ * interior angles, a b r are always arc lengths, φ is a bearing and θ is the
+ * distance from the eye. Reuse one across two lines and the board stops being
+ * checkable.
+ */
+const CHALK: Chalk[] = [
+  { text: 'cos r = cos a · cos b', x: 48, y: 96, size: 76, rot: -0.03, underline: true },
+  { text: 'K = +1', x: 1000, y: 88, size: 58, rot: 0.06 },
+
+  { text: 'tan φ = tan b / sin a', x: 96, y: 216, size: 54, rot: 0.025 },
+  { text: 'δ = s / sin θ', x: 790, y: 206, size: 60, rot: -0.05 },
+
+  { text: 'sin α / sin a = sin β / sin b', x: 56, y: 332, size: 44, rot: -0.018, tone: '#c3d0bd' },
+  { text: 'C = 2π sin r', x: 800, y: 326, size: 52, rot: 0.055 },
+
+  { text: 'α + β + γ = π + E', x: 88, y: 448, size: 62, rot: 0.02 },
+  { text: '2π ≡ 0', x: 880, y: 440, size: 68, rot: -0.07, ring: true },
+
+  { text: 'Σ = 3π/2  ⇒  E = π/2', x: 60, y: 558, size: 44, rot: 0.04, tone: '#b9c6b4' },
+  { text: 'A = 4π', x: 860, y: 546, size: 48, rot: -0.035 },
+
+  { text: 'd(p,q) = 2 arctan |p ⊕ (−q)|', x: 76, y: 652, size: 40, rot: -0.022, tone: '#c3d0bd' },
+  { text: 'r ∈ [0, π]', x: 900, y: 644, size: 38, rot: 0.05, tone: '#b9c6b4' },
+];
 
 /** Set the largest font that fits, instead of letting text run off the board. */
 function fitText(
@@ -48,24 +82,55 @@ function chalkboardTexture() {
     ctx.fillStyle = '#2e4038';
     ctx.fillRect(0, 0, w, h);
 
-    const script = '"Segoe Script", "Comic Sans MS", cursive';
-    const mono = 'ui-monospace, Consolas, monospace';
-    const maxW = w * 0.88;
+    // Wipe marks, drawn under everything: a board that has been used.
+    ctx.strokeStyle = '#374a41';
+    ctx.lineWidth = 30;
+    for (let i = 0; i < 7; i++) {
+      const y = 80 + i * 96;
+      ctx.beginPath();
+      ctx.moveTo(30, y + Math.sin(i * 2.1) * 16);
+      ctx.lineTo(w - 30, y + Math.sin(i * 1.3 + 1) * 20);
+      ctx.stroke();
+    }
 
-    ctx.textAlign = 'center';
+    // Greek and the maths signs are not in the script faces, so the stack ends
+    // with a text font that has them — without it they fall through to tofu.
+    const script = '"Segoe Script", "Comic Sans MS", "Segoe UI", cursive';
+
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
-    ctx.fillStyle = '#e6ecdf';
-    fitText(ctx, 'cos r = cos a · cos b', maxW, 120, script);
-    ctx.fillText('cos r = cos a · cos b', w / 2, h * 0.32);
+    for (const line of CHALK) {
+      ctx.save();
+      ctx.translate(line.x, line.y);
+      ctx.rotate(line.rot);
 
-    ctx.fillStyle = '#b9c6b4';
-    fitText(ctx, t(CAPTION), maxW, 52, script);
-    ctx.fillText(t(CAPTION), w / 2, h * 0.56);
+      // Measured after fitting, never assumed: the marks below have to match
+      // whatever size the text actually landed on.
+      fitText(ctx, line.text, w - line.x - 32, line.size, script);
+      const tw = ctx.measureText(line.text).width;
 
-    ctx.fillStyle = '#93a591';
-    fitText(ctx, t(SCHOOL), maxW, 40, mono);
-    ctx.fillText(t(SCHOOL), w / 2, h * 0.82);
+      ctx.fillStyle = line.tone ?? '#e6ecdf';
+      ctx.fillText(line.text, 0, 0);
+
+      ctx.strokeStyle = ctx.fillStyle;
+      if (line.underline) {
+        ctx.lineWidth = 3;
+        for (const [dy, from, to] of [[0.62, 0, 1], [0.72, 0.06, 0.93]]) {
+          ctx.beginPath();
+          ctx.moveTo(tw * from, line.size * dy);
+          ctx.lineTo(tw * to, line.size * dy + 3);
+          ctx.stroke();
+        }
+      }
+      if (line.ring) {
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(tw / 2, 0, tw * 0.72, line.size * 0.82, 0.06, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // Chalk dust on the tray edge.
     ctx.fillStyle = '#3a4d44';
