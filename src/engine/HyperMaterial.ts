@@ -74,6 +74,19 @@ export interface HyperMaterialOptions {
   /** Alpha below this is discarded. */
   alphaTest?: number;
   /**
+   * Composite the map's alpha instead of cutting out against `alphaTest`.
+   *
+   * For paint lying flat on a surface — path markings — where the decal is
+   * always in front of one opaque thing directly beneath it, so none of the
+   * sorting that makes transparency painful applies. The texture MUST be
+   * mipmapped: prefiltered alpha is the entire mechanism, and without it a
+   * blended decal aliases exactly as badly as a cutout did.
+   *
+   * Not for signage. Anything that can be seen against something other than
+   * the surface it is painted on wants the cutout.
+   */
+  alphaBlend?: boolean;
+  /**
    * Set false to skip the shadow-depth twin. For flat paint lying on the
    * ground (path markings, plaques) a shadow caster is pure cost.
    */
@@ -107,6 +120,7 @@ function build(
   if (hemisphere === 'top') defines.TOP_HEMISPHERE = '1';
   if (hemisphere === 'bottom') defines.BOTTOM_HEMISPHERE = '1';
   if (opts.map) defines.USE_MAP = '1';
+  if (opts.map && opts.alphaBlend) defines.USE_ALPHA_BLEND = '1';
   // The far hemisphere is beyond the shadow map's reach (and mostly fog), so
   // only near-side materials pay for the sampling.
   if (shadowsEnabled && hemisphere !== 'top' && opts.receiveShadow !== false) {
@@ -138,6 +152,13 @@ function build(
   }) as HyperMaterial;
 
   mat.isHyperMaterial = true;
+  if (opts.map && opts.alphaBlend) {
+    mat.transparent = true;
+    // Coplanar paint on the surface below it. Writing depth would only let one
+    // decal occlude another at the same spot, which is not a thing that
+    // happens here, and would break the blend if it did.
+    mat.depthWrite = false;
+  }
   if (opts.side !== undefined) mat.side = opts.side;
   return mat;
 }

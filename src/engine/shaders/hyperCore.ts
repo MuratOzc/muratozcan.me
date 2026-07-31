@@ -339,12 +339,28 @@ void main() {
   diffuse = uAmbient + (1.0 - uAmbient) * diffuse;
 
   vec3 base = uColor;
+  float alpha = 1.0;
   #ifdef USE_MAP
     // Cutout rather than blending. Sorting transparent surfaces would have to
     // cope with the two hemisphere passes each owning half the depth range,
     // which is not worth it for signage.
     vec4 tex = texture(uMap, vUv);
-    if (tex.a < uAlphaTest) discard;
+    #ifdef USE_ALPHA_BLEND
+      // Composited, not cut out. A cutout decides per pixel whether a texel is
+      // there at all, which is the wrong question for paint lying flat on a
+      // surface: every distant chevron is thinner than the pixel asking, so it
+      // answers half yes and half no and the shape breaks into fragments.
+      //
+      // The mipmap has already averaged that shape down to the right coverage
+      // for the distance it is being viewed at. Taking its alpha as-is spends
+      // that work instead of throwing it away, and needs no threshold, no
+      // derivative rescale, and no MSAA to look right — a texel that is 40%
+      // covered draws at 40%.
+      alpha = tex.a;
+      if (alpha <= 0.0) discard;
+    #else
+      if (tex.a < uAlphaTest) discard;
+    #endif
     base *= tex.rgb;
   #endif
 
@@ -375,6 +391,6 @@ void main() {
   }
 
   col = mix(col, uFog.rgb, fog_a);
-  fragColor = vec4(col, 1.0);
+  fragColor = vec4(col, alpha);
 }
 `;

@@ -238,6 +238,7 @@ export function buildContact(
             color: BRASS,
             ambient: 0.62,
             alphaTest: 0.35,
+            alphaBlend: true,
             castShadow: false,
             receiveShadow: false,
           },

@@ -136,6 +136,7 @@ export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi:
       color: 0xffffff,
       ambient: 0.9,
       alphaTest: 0.3,
+      alphaBlend: true,
       castShadow: false,
     });
     world.add(o);

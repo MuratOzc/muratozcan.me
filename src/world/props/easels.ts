@@ -286,9 +286,12 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
       map: tex,
       color: 0xffffff,
       ambient: 0.95,
-      // Low rather than the 0.5 default: these are pictures, not cutouts, and
-      // anything but genuinely transparent pixels has to survive.
+      // Only the shadow pass reads this now; the face composites its alpha.
+      // Still low, because that pass is the one place a picture is forced to
+      // answer as a cutout and anything but genuinely transparent has to
+      // survive the question.
       alphaTest: 0.05,
+      alphaBlend: true,
       castShadow: false,
       receiveShadow: false,
     });

@@ -1,17 +1,30 @@
 import { BoxGeometry, PlaneGeometry } from 'three';
 import { HyperObject, type HyperWorld } from '../../engine';
-import { pathYaw, placeAlongPath, units } from '../placement';
+import { pathYaw, placeAlongPath } from '../placement';
 import { makeArrowTexture } from '../text';
 
 /**
  * The aisle: slabs the whole way round, with chevrons painted on.
- *
- * Skipped near the antipode, where the Poincare radius diverges — a gap of a
- * couple of units that later content covers.
  */
 
-/** Gap between slab centres, in authored units. */
-const STEP = 1.1;
+/**
+ * Slabs in the ring. COUNTED, not stepped, and the count MUST BE ODD.
+ *
+ * Stepping by a fixed distance divided 2*PI into 57.12 slabs, which cost the
+ * path both of its ends: the leftover 0.12 dropped the last slab a tenth of a
+ * unit from the one at spawn, and nothing made the sampling avoid the
+ * antipode, so a slab landed 0.048 short of it and had to be dropped — leaving
+ * a hole on one side only, which is the missing stone.
+ *
+ * The antipode has no chart coordinate at all: the Poincare radius is
+ * tan(d/2), infinite at d = PI. An even count puts a slab centre exactly
+ * there. An odd count straddles it, so the two nearest sit half a step short
+ * on either side — placeable, symmetric, and the ring closes with neither a
+ * gap nor a seam.
+ *
+ * 57 keeps the 1.1 units between centres the path was authored at.
+ */
+const SLABS = 57;
 
 function slabGeometry() {
   const g = new BoxGeometry(1.6, 0.04, 0.9, 2, 1, 2);
@@ -31,8 +44,12 @@ export function buildAisle(world: HyperWorld): HyperObject[] {
   arrowGeo.rotateX(-Math.PI / 2);
   arrowGeo.translate(0, 0.045, 0);
 
-  let step = 0;
-  for (let a = 0; a < total; a += units(STEP)) {
+  const step = total / SLABS;
+  for (let i = 0; i < SLABS; i++) {
+    const a = i * step;
+    // Never fires while SLABS is odd. Kept because the failure it guards is
+    // not a gap but an infinity, and the parity that avoids it is one edit away
+    // from being lost.
     if (Math.abs(a - Math.PI) < 0.05) continue;
     const yaw = pathYaw(a, 0);
     const o = new HyperObject(placeAlongPath(a, 0));
@@ -46,19 +63,19 @@ export function buildAisle(world: HyperWorld): HyperObject[] {
     world.add(o);
     objects.push(o);
 
-    if (step % 4 === 2) {
+    if (i % 4 === 2) {
       const arrow = new HyperObject(placeAlongPath(a, 0));
       arrow.rotation.y = yaw;
       arrow.addGeometry(world.shared, arrowGeo, {
         map: arrowTex,
         color: 0xffffff,
         ambient: 0.9,
-        alphaTest: 0.3,
+        alphaBlend: true,
+        castShadow: false,
       });
       world.add(arrow);
       objects.push(arrow);
     }
-    step++;
   }
 
   return objects;

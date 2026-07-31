@@ -147,6 +147,7 @@ export function buildCabinets(
       color: 0xffffff,
       ambient: 0.92,
       alphaTest: 0.3,
+      alphaBlend: true,
       castShadow: false,
       receiveShadow: false,
     });

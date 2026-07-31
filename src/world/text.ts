@@ -97,7 +97,11 @@ export function makeArrowTexture(color = '#5c6b52'): Texture {
 
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
-  tex.minFilter = LinearFilter;
+  // Mipmapped like the text canvases, and for a sharper reason: these lie flat
+  // on the path, so a distant arrow covers a couple of pixels with a 256px
+  // image. Anisotropy is a mip-selection technique and does nothing at all
+  // without the chain — the grazing angle is exactly what it exists for.
+  tex.minFilter = LinearMipmapLinearFilter;
   tex.magFilter = LinearFilter;
   tex.anisotropy = 8;
   return tex;

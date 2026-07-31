@@ -27,11 +27,12 @@ import { PORTRAIT_ART } from './portraitArt';
  * resolving and it reads as a face. One legible band per lap, abstract at both
  * ends of it.
  *
- * THE COST OF TRANSPARENCY. Cutout alpha and mipmaps disagree: a sparse `.` cell
- * averages down to a few percent alpha in the upper mips, so the light tones
- * drop out with distance and what survives is nearer a silhouette than a grey.
- * `alphaTest` is set low to hold the tonal range as long as it can. An opaque
- * plate would keep all of it — and would stop being a cutout.
+ * TONE SURVIVES DISTANCE. A sparse `.` cell averages down to a few percent
+ * alpha in the upper mips, and a cutout has to answer yes or no about it — so
+ * the light tones used to drop out with distance and what survived was nearer
+ * a silhouette than a grey. Compositing that alpha instead spends the mip's
+ * average as the coverage it already is, which is what holds the ramp together
+ * out to the quarter turn where the glyphs stop resolving and the face appears.
  */
 
 /** Glyph cell, in texture pixels. Height is twice width; see PORTRAIT_ART. */
@@ -143,9 +144,10 @@ export function buildPortrait(
     // Flat out. At 1.0 the shader's diffuse term cancels entirely, which is what
     // makes the unflipped normal on the back face harmless.
     ambient: 1.0,
-    // Low, not the 0.5 default: this is a tonal picture, not a stencil, and the
-    // sparse end of the ramp has to survive as far out as it can.
+    // Read by the shadow pass only. The face composites its alpha instead, so
+    // the sparse end of the ramp no longer has to survive a threshold.
     alphaTest: 0.04,
+    alphaBlend: true,
     side: DoubleSide,
     // A vertical sheet under a near-overhead light casts a sliver of nothing,
     // and with ambient flat it cannot show a received shadow either.
