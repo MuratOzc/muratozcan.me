@@ -48,8 +48,13 @@ export const UI = {
   qualityMedium: L('Medium', 'Orta'),
   qualityHigh: L('High', 'Yüksek'),
   qualityNote: L(
-    'Sets shadow detail and render resolution. Drop it if the frame rate is uneven.',
+    'Sets shadow detail. Drop it if the frame rate is uneven.',
     'Gölgelerin detaylarını belirler. Kare hızı düşükse bunu düşürün.',
+  ),
+  resolution: L('Resolution', 'Çözünürlük'),
+  resolutionNote: L(
+    'How many pixels are drawn per screen pixel. Higher is sharper and slower.',
+    'Ekrandaki her piksel için kaç piksel çizileceği. Yüksek olan daha net, daha yavaş.',
   ),
 
   showHelp: L('Show controls', 'Kontrolleri göster'),

@@ -207,7 +207,7 @@ async function boot(): Promise<void> {
     controls.headBob = s.headBob ? 0.018 : 0;
 
     const q = QUALITY[s.quality];
-    world.setPixelRatioCap(q.pixelRatio);
+    world.setPixelRatioCap(s.resolution);
     world.setShadowMapSize(q.shadowMapSize);
     world.setShadowsEnabled(q.shadows);
 

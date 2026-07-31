@@ -19,10 +19,15 @@ export interface Settings {
   invertLook: boolean;
   headBob: boolean;
   quality: Quality;
+  /** Upper bound on devicePixelRatio. Independent of `quality`. */
+  resolution: number;
   showHelp: boolean;
   showDetails: boolean;
   showTests: boolean;
 }
+
+export const RESOLUTION_MIN = 0.5;
+export const RESOLUTION_MAX = 3;
 
 export function defaults(): Settings {
   return {
@@ -33,6 +38,11 @@ export function defaults(): Settings {
     // The shadow map is the single biggest cost and 4096 alone is ~64 MB of
     // GPU memory, which is more than some phones will give a tab at all.
     quality: isTouch ? 'medium' : 'high',
+    // Phones report devicePixelRatio 3 or more, and capping below it is what
+    // made the world look soft — the shadow budget is `quality`'s problem, not
+    // this one's. 2 is the point past which a phone screen stops resolving the
+    // difference and only the fill rate notices.
+    resolution: 2,
     showHelp: true,
     // Diagnostics, not content. Anyone who wants them knows where they are.
     showDetails: false,
@@ -59,6 +69,10 @@ function load(): Settings {
     if (!['low', 'medium', 'high'].includes(base.quality)) base.quality = defaults().quality;
     base.fov = Math.max(40, Math.min(100, base.fov));
     base.sensitivity = Math.max(0.2, Math.min(3, base.sensitivity));
+    base.resolution = Math.max(
+      RESOLUTION_MIN,
+      Math.min(RESOLUTION_MAX, base.resolution),
+    );
   } catch {
     // Private browsing, or a corrupt blob. Defaults are always valid.
   }
@@ -101,14 +115,12 @@ export function onSettingsChange(fn: (s: Settings) => void): () => void {
 }
 
 export interface QualityProfile {
-  /** Upper bound on devicePixelRatio. */
-  pixelRatio: number;
   shadowMapSize: number;
   shadows: boolean;
 }
 
 export const QUALITY: Record<Quality, QualityProfile> = {
-  low: { pixelRatio: 1, shadowMapSize: 1024, shadows: false },
-  medium: { pixelRatio: 1.5, shadowMapSize: 2048, shadows: true },
-  high: { pixelRatio: 2, shadowMapSize: 4096, shadows: true },
+  low: { shadowMapSize: 1024, shadows: false },
+  medium: { shadowMapSize: 2048, shadows: true },
+  high: { shadowMapSize: 4096, shadows: true },
 };

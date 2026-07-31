@@ -1,6 +1,8 @@
 import { lang, onLangChange, setLang, t, type Lang, type Localized } from '../content/i18n';
 import { UI } from '../content/ui';
 import {
+  RESOLUTION_MAX,
+  RESOLUTION_MIN,
   resetSettings,
   setSetting,
   settings,
@@ -113,6 +115,17 @@ function groups(): Group[] {
     {
       title: UI.groupPerformance,
       rows: [
+        {
+          kind: 'range',
+          label: UI.resolution,
+          note: UI.resolutionNote,
+          min: RESOLUTION_MIN,
+          max: RESOLUTION_MAX,
+          step: 0.25,
+          format: (v) => `${v}×`,
+          get: () => settings().resolution,
+          set: (v) => setSetting('resolution', v),
+        },
         {
           kind: 'segmented',
           label: UI.quality,
