@@ -4,6 +4,9 @@ dist-ssr/
 .vite/
 *.local
 
+# Upstream HyperEngine checkout, kept alongside for reference. Has its own .git.
+HyperEngine/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

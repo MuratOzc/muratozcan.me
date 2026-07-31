@@ -1,7 +1,7 @@
 {
   "name": "muratozcan-me",
   "version": "1.0.0",
-  "description": "",
+  "description": "Personal site built inside a spherical (S³) world",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Murat Özcan",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "three": "^0.185.1"
   },

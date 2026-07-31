@@ -1,7 +1,6 @@
 import { PlaneGeometry, Vector3 } from 'three';
 import { HyperObject, type HyperWorld } from '../../engine';
 import { placeOnGround, type Poi } from '../placement';
-import { L } from '../../content/i18n';
 import { makeTextTexture } from '../text';
 
 /**
