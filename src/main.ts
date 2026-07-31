@@ -21,7 +21,7 @@ import {
 import { lang, onLangChange, setLang, type Lang } from './content/i18n';
 import { ProximityPanel } from './world/panel';
 import { buildLandmarks } from './world/landmarks';
-import { buildFigure, buildSkeleton } from './world/skeleton';
+import { buildSkeleton } from './world/skeleton';
 import { buildStations } from './world/stations';
 import { makeTextTexture } from './world/text';
 
@@ -99,7 +99,6 @@ const panel = new ProximityPanel();
 const skeleton = buildSkeleton(world);
 const stations = buildStations(world);
 const landmarks = buildLandmarks(world);
-buildFigure(world).catch((e) => console.error('figure failed to load:', e));
 const pois: Poi[] = [...skeleton.pois, ...stations.pois, ...landmarks.pois];
 
 // ------------------------------------------------------------------ language

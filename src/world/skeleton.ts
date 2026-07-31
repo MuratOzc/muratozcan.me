@@ -2,7 +2,7 @@ import { HyperObject, type HyperWorld } from '../engine';
 import { pathYaw, placeAlongPath, units, type Poi } from './placement';
 import { buildAisle } from './props/aisle';
 import { buildArch } from './props/arch';
-import { buildFigure as buildFigureProp, buildPlinth } from './props/figure';
+import { buildPortrait } from './props/portrait';
 import { buildScatter } from './props/scatter';
 
 /**
@@ -13,9 +13,9 @@ import { buildScatter } from './props/scatter';
  *            +---------------- comes back round ---------------+
  *
  * The aisle is a great circle through spawn, so walking it returns you to
- * where you began — and to the model, which stands just behind the start.
+ * where you began — and to the portrait, which stands just behind the start.
  *
- * Putting the model at spawn rather than at the antipode is what makes the
+ * Putting the portrait at spawn rather than at the antipode is what makes the
  * walk work. Distance from it shrinks its apparent size only until a quarter
  * turn; past that it GROWS, and at the halfway point it is directly antipodal
  * and fills the entire sky. You spend the second half of the walk unable to
@@ -28,7 +28,7 @@ import { buildScatter } from './props/scatter';
 
 /** Distance ahead of spawn where the arch stands, in units. */
 export const ARCH_AT = 5.0;
-/** How far behind spawn the model stands, in units. */
+/** How far behind spawn the portrait stands, in units. */
 export const MODEL_AT = 8.0;
 /** Total aisle length: once around. */
 export const AISLE_LENGTH = 2 * Math.PI;
@@ -59,22 +59,16 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
   objects.push(arch.object);
   pois.push(arch.poi);
 
-  // ------------------------------------------------------------ the plinth
+  // ----------------------------------------------------------- the portrait
   const modelAt = -units(MODEL_AT);
-  const plinth = buildPlinth(world, placeAlongPath(modelAt, 0), pathYaw(modelAt, 0));
-  objects.push(plinth.object);
-  pois.push(plinth.poi);
-
-  return { pois, objects };
-}
-
-/** The figure on the plinth. Async because it fetches a model. */
-export async function buildFigure(world: HyperWorld): Promise<HyperObject> {
-  const modelAt = -units(MODEL_AT);
-  return buildFigureProp(
+  const portrait = buildPortrait(
     world,
     placeAlongPath(modelAt, 0),
     // Face back down the path, toward the arch and the walk ahead.
     pathYaw(modelAt, 0) + Math.PI,
   );
+  objects.push(portrait.object);
+  pois.push(portrait.poi);
+
+  return { pois, objects };
 }

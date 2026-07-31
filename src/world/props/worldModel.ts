@@ -17,7 +17,6 @@ import { EXHIBIT_LATERAL, SENTRIES } from '../layout';
 import { ARCH_AT, MODEL_AT } from '../skeleton';
 import { localizedCanvasTexture } from '../text';
 import { easelPole, easelSpots } from './easels';
-import { attachGlobeTuner } from './globeTuner';
 import { triangleCorners } from './triangle';
 
 /**
