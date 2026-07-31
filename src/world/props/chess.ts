@@ -372,7 +372,7 @@ function scoresheetTexture(forWhite: boolean): Texture {
   const HAND = '"Segoe Script", "Comic Sans MS", cursive';
   const WHITE_L: Localized = L('White', 'Beyaz');
   const BLACK_L: Localized = L('Black', 'Siyah');
-  const ROUND_L: Localized = L('Round 4 · Board 1', '4. tur · 1. masa');
+  const ROUND_L: Localized = L('Private match · July 2024', 'Özel maç · Temmuz 2024');
   const RESULT_L: Localized = L('Result', 'Sonuç');
 
   return localizedCanvasTexture(512, 730, (ctx, w, h) => {
@@ -548,12 +548,7 @@ function clockFaceTexture(): Texture {
 
 /** The result placard, in the register of a wall-mounted pairing sheet. */
 function scoreboardTexture(): Texture {
-  const HEAD: Localized = L('Round 4 · Board 1', '4. tur · 1. masa');
   const NOTE: Localized = L("Scholar's mate · 4 moves", 'Çoban matı · 4 hamle');
-  const FOOT: Localized = L(
-    'Reconstruction. Not submitted for rating.',
-    'Temsilîdir. Puanlamaya gönderilmemiştir.',
-  );
 
   return localizedCanvasTexture(1024, 616, (ctx, w, h) => {
     ctx.fillStyle = '#f2ece0';
@@ -565,27 +560,13 @@ function scoreboardTexture(): Texture {
     const pad = 62;
     ctx.textBaseline = 'middle';
 
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#7b8478';
-    ctx.letterSpacing = '8px';
-    ctx.font = `600 34px ${MONO}`;
-    ctx.fillText(upper(t(HEAD)), w / 2, 76);
-    ctx.letterSpacing = '0px';
-
-    ctx.strokeStyle = '#c6bfae';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(pad, 120);
-    ctx.lineTo(w - pad, 120);
-    ctx.stroke();
-
     const rows: Array<[string, string, string]> = [
       ['#f6f1e2', 'ÖZCAN, Murat', '1'],
       ['#4a4038', 'CARLSEN, Magnus', '0'],
     ];
     ctx.textAlign = 'left';
     rows.forEach(([chip, name, score], i) => {
-      const y = 196 + i * 96;
+      const y = 168 + i * 112;
       ctx.fillStyle = chip;
       ctx.fillRect(pad, y - 26, 52, 52);
       ctx.strokeStyle = '#8c8474';
@@ -604,22 +585,19 @@ function scoreboardTexture(): Texture {
 
     ctx.beginPath();
     ctx.strokeStyle = '#c6bfae';
-    ctx.moveTo(pad, 348);
-    ctx.lineTo(w - pad, 348);
+    ctx.lineWidth = 3;
+    ctx.moveTo(pad, 360);
+    ctx.lineTo(w - pad, 360);
     ctx.stroke();
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#4c5a4d';
     ctx.font = `500 44px ${MONO}`;
-    ctx.fillText(t(NOTE), w / 2, 416);
-
-    ctx.fillStyle = '#8d8778';
-    ctx.font = `400 28px ${MONO}`;
-    ctx.fillText(t(FOOT), w / 2, 500);
+    ctx.fillText(t(NOTE), w / 2, 440);
 
     ctx.fillStyle = '#9c9484';
-    ctx.font = `400 24px ${MONO}`;
-    ctx.fillText(MOVES.map(([a, b], i) => `${i + 1}.${a}${b ? ` ${b}` : ''}`).join('  '), w / 2, 552);
+    ctx.font = `400 28px ${MONO}`;
+    ctx.fillText(MOVES.map(([a, b], i) => `${i + 1}.${a}${b ? ` ${b}` : ''}`).join('  '), w / 2, 522);
   });
 }
 

@@ -34,10 +34,10 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
   objects.push(buildChessTable(world, centre.gv, centre.yaw));
   pois.push({
     id: 'chess',
-    title: L('Özcan – Carlsen, 1–0', 'Özcan – Carlsen, 1–0'),
+    title: L('Özcan 1 – 0 Carlsen', 'Özcan 1 - 0 Carlsen'),
     body: L(
-      "Scholar's mate. Four moves. He never saw it coming. (Reconstruction; slightly aspirational.)",
-      'Çoban matı. Dört hamle. Ne olduğunu anlayamadı bile. (Temsilîdir; biraz iyimserdir.)',
+      'July 2024, private match. Four moves, and Magnus was brought down a notch even before he worked out what had happened. It was right here on this 270° triangle. Sadly, there were no witnesses. (Long story short, I like chess.)',
+      'Temmuz 2024, Özel maç. 4 hamlede Magnus’un tüm karizması ne olduğunu anlayamadan çizildi. Ben de zevkten üç köşe oldum (zemindeki 270° üçgen gibi). Tabi maalesef tanık olan kimse yoktu. (Uzun lafın kısası, satrancı severim)',
     ),
     gv: centre.gv,
     radius: units(5),

@@ -302,10 +302,10 @@ export function buildEasels(world: HyperWorld): { objects: HyperObject[]; poi: P
     objects: EASELS.map((spec) => buildEasel(world, spec)),
     poi: {
       id: 'easels',
-      title: L('Things I made for no one', 'Kimse için yapmadığım şeyler'),
+      title: L('Art-ish Things, For Art’s Sake', 'Sanat için Sanatımsı Bi Şeyler'),
       body: L(
-        'Digital images and video, made for no client. Some of it is what the inside of my head looks like; some of it is just a joke I wanted to see rendered properly. Nobody asked for any of it, which is the whole appeal — the same tools as the day job, pointed somewhere useless.',
-        'Dijital görseller ve videolar; müşterisi yok. Bir kısmı kafamın içi nasıl görünüyorsa öyle; bir kısmı sadece düzgünce render edilmiş hâlini görmek istediğim bir şaka. Hiçbirini kimse istemedi, bütün cazibesi de bu — gündüz işindeki araçlar, işe yaramaz bir yöne çevrilmiş.',
+        'Digital images and video are another one of my hobbies. Some exist to give my absurdity a physical form, others to get the inside of my head out where it can be seen. Nothing I make is without a thought behind it — though some of them are not being understood at all. Perhaps that is on me for not explaining it well.',
+        'Dijital resimler ve videolar hobilerimden bir diğeri. Bazıları absürtlüğümü materyalleştirmek, bazıları ise kafamın içini dışarı dökebilmek için varoldu. Arkasında bir düşünce olmayan içeriğim yok, ancak bazılarını anlayan da yok. Belki de anlatamadığım içindir.',
       ),
       gv: groundGV(POLE),
       radius: units(9),

@@ -161,8 +161,8 @@ export function buildPortrait(
       id: 'me',
       title: L('Murat Özcan', 'Murat Özcan'),
       body: L(
-        'Sixteen characters and a space, one glyph to a cell, with the sky behind them. Stand here and it is noise. It only becomes a face from further off than you can get without walking.',
-        'On altı karakter ve bir boşluk, hücre başına bir glif, arkasında gökyüzü. Burada dururken gürültü. Yüze dönüşmesi için yürümeden varamayacağın kadar uzaklaşmak gerekiyor.',
+        'That handsome man is me. I have this much character in real life too.',
+        'İşte bu yakışıklı benim. Gerçek hayatta da bu kadar karakterliyim.',
       ),
       gv: at,
       radius: units(6),

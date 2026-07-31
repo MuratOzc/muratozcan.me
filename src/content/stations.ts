@@ -12,10 +12,9 @@ import { isTouch } from '../device';
  * The arch stands at 5 and the figure at 54.8, so the run from 9 to 50.8
  * leaves a beat at each end.
  *
- * The through-line: station one asks what to call someone who runs an entire
- * technology organisation alone, the stations in between ARE the org chart,
- * and the contact station closes the loop — "if you worked out the title,
- * that's the subject line."
+ * The through-line: station one says there is no job title, the stations in
+ * between are what the job actually is, and the contact station closes the
+ * loop — "maybe we work out the title together."
  */
 
 /** Distance along the path, in units, of the first and last stations. */
@@ -32,7 +31,7 @@ export interface Station {
   at: number;
   /** Perpendicular offset. Negative is left of the path. Derived. */
   lateral: number;
-  /** The exhibit, named on the sign's small print. */
+  /** The line of small print under the title on the sign. */
   object: Localized;
   body: Localized;
 }
@@ -42,111 +41,111 @@ type StationDef = Pick<Station, 'id' | 'title' | 'object' | 'body'>;
 const DEFS: StationDef[] = [
   {
     id: 'title',
-    title: L('The title problem', 'Unvan problemi'),
+    title: L('I don’t have a job title', 'İş ünvanım yok'),
     object: L(
-      'signpost, every title crossed out, one blank',
-      'tabela direği, tüm unvanlar çizili, biri boş',
+      'I don’t know what I am either',
+      'Ne olduğumu ben de bilmiyorum',
     ),
     body: L(
-      'I run the technology side of an early-stage startup — strategy, architecture, backend, frontend, databases, servers, networking, security, deployments. Every plate on this post is technically correct. None of them is the whole job. The rest of this path is the actual job description.',
-      'Erken aşama bir startup’ın teknoloji tarafını ben yürütüyorum — strateji, mimari, backend, frontend, veritabanları, sunucular, ağ, güvenlik, dağıtımlar. Bu direkteki her levha teknik olarak doğru; ama hiçbiri işin tamamı değil. Asıl iş tanımı, bu yolun geri kalanı.',
+      'Architectural decisions, backend, frontend, databases and SQL, AI, security, git, servers, hardware... And not in a jack-of-all-trades way either — I am properly deep in all of it. Which is why my real job title is this website itself.',
+      'Mimari kararlar, backend, frontend, veritabanları ve sql, yapay zeka, güvenlik, git, sunucular, donanım... Ne iş olsa yaparım elemanları gibi de değil, oldukça içli dışlıyım. Bu yüzden asıl iş ünvanım bu sitenin ta kendisi.',
     ),
   },
   {
     id: 'origin',
-    title: L('Maths and computers', 'Matematik ve bilgisayar'),
-    object: L('school desk, chalkboard, a CRT', 'okul sırası, kara tahta, tüplü ekran'),
+    title: L('Maths and Technology', 'Matematik ve Teknoloji'),
+    object: L('Ever since I was in diapers', 'Biz bu işe beşikte başladık'),
     body: L(
-      'Good at maths, good at computers — software and hardware — for as long as I can remember. Mathematical engineering was the obvious move: Yıldız Technical University, 2018–2024. The formula on the board is not decoration; it is the exact equation that places every object in this world. Including the board.',
-      'Kendimi bildim bileli matematiğim ve bilgisayarım iyiydi — yazılımıyla da donanımıyla da. Matematik mühendisliği bu yüzden bariz tercihti: Yıldız Teknik Üniversitesi, 2018–2024. Tahtadaki formül süs değil; bu dünyadaki her nesneyi yerine koyan denklemin ta kendisi. Tahta dahil.',
+      'For as long as I can remember, maths and technology and I got along. My interst for both started before primary school. So when it came to picking a university course, mathematical engineering was the obvious road. Yıldız Technical University, 2018–2024.',
+      'Kendimi bildim bileli matematik ve teknolojiyle aram çok iyiydi. İkisini de ilkokuldan önce kurcalamaya başladım. Dolayısıyla üniversite tercihlerinde matematik mühendisliği benim için bariz yoldu. Yıldız Teknik Üniversitesi 2018-2024',
     ),
   },
   {
     id: 'architecture',
     title: L('Architecture', 'Mimari'),
-    object: L('scale model of this world', 'bu dünyanın maketi'),
+    object: L('Not just a job for architects', 'Sadece mimarların işi değil'),
     body: L(
-      'Deciding the shape of a system before it sets, then living with the decision. I design ours end to end — the services, the data, the seams between them. The honest architecture diagram is a world you have to walk through: everything connected, nothing hidden, and the person who drew it lives in it.',
-      'Bir sistemin şeklini katılaşmadan önce belirlemek, sonra o kararla yaşamak. Bizimkini uçtan uca ben tasarlıyorum — servisler, veri, aralarındaki dikişler. Dürüst mimari diyagram, içinde yürümek zorunda olduğunuz bir dünyadır: her şey bağlı, hiçbir şey gizli değil ve çizen kişi içinde yaşıyor.',
+      'I never start anything without a detailed plan. I cover my bases, think it through from every angle, and only then set off. Software is no different. Designing every part of a system so that it is both solid and open to improvement is what gets you somewhere in this world.',
+      'Hiçbir işe detaylı plan yapmadan başlamam. İşimi garantiye alır, enine boyuna düşünür öyle yola çıkarım. Yazılımda da öyle. Sistemin tüm parçalarını tasarlayıp hem sağlam hem de geliştirmeye açık olmasını sağlamak bu dünyada sizi ileri götürür.',
     ),
   },
   {
     id: 'backend',
     title: L('Backend', 'Backend'),
     object: L(
-      'a cased movement, thirty gears, one input',
-      'kasalı bir mekanizma, otuz dişli, tek giriş',
+      'Why not call it the rear end, then?',
+      'Niye gerison değil mesela?',
     ),
     body: L(
-      'C# and .NET — Framework and modern, Razor, Blazor, MVC, minimal APIs, with detours through React and Node. The application is the part nobody applauds: requests in, correct answers out, every time, for years. That is the whole trick, and it is harder than it sounds.',
-      'C# ve .NET — Framework’ü de moderni de; Razor, Blazor, MVC, minimal API’ler; arada React ve Node gezintileri. Uygulama, kimsenin alkışlamadığı kısımdır: istek girer, doğru cevap çıkar; her seferinde, yıllarca. Bütün numara bu — ve kulağa geldiğinden zor.',
+      'I like C# and .NET. Love them, actually. I have messed around with TypeScript too, but JavaScript — may God spare my worst enemy’s IDE from it. How is one language that awful? Anyway: modern .NET, .NET Framework, Razor, Blazor, MVC, minimal APIs, I have tried all of them. After minimal APIs I cannot even look at MVC.',
+      'C# ve .NET’i seviyorum. Hatta bayılıyorum. Typescript ile falan da uğraştım da javascript’i Allah düşmanımın IDE’sine vermesin, bu kadar rezil bir dil olabilir mi ya? Neyse, Modern .NET, .NET Framework, Razor, Blazor, MVC, Minimal API, hepsini denedim. Minimal API’dan sonra MVC’nin yüzüne bakmam.',
     ),
   },
   {
     id: 'frontend',
     title: L('Frontend', 'Frontend'),
-    object: L('a monitor showing this site', 'bu siteyi gösteren bir ekran'),
+    object: L(
+      'They say frontend people aren’t real developers...',
+      'Frontend’ciler yazılımcı değil diyorlar...',
+    ),
     body: L(
-      'The only layer anyone ever sees, so it carries the whole first impression. At work that means Razor and Blazor interfaces people use all day. Here it means the thing you are standing in: a hand-built WebGL world on a curved space. A CV should show, not tell.',
-      'Herkesin gördüğü tek katman; ilk izlenimin tamamını o taşır. İşte bu, insanların bütün gün kullandığı Razor ve Blazor arayüzleri demek. Burada ise içinde durduğunuz şey demek: kavisli bir uzayda elle yazılmış bir WebGL dünyası. Bir CV anlatmamalı, göstermeli.',
+      'The only layer people ever see and touch. This wretched thing carries the entire impression. If it is bad, nobody cares about the backend. Thanks to AI I never had to properly learn it, which is the only reason I still have my sanity. I have built things with Razor and plain CSS, and with React and Tailwind. Razor does the job if the project is not too tangled, but React is a serious relief.',
+      'İnsanların gördüğü ve etkileşime girdiği tek katman. Tüm izlenimi bu meret veriyor. Bu kötüyse backend kimsenin umrunda değil. Yapay zeka sağolsun öğrenmek zorunda kalmadım da kafayı yemedim. Razor+dümdüz css ile de React+Tailwind ile de yaptım bir şeyler. Çok karışık proje değilse Razor iş görür ama React bayağı büyük rahatlık.',
     ),
   },
   {
     id: 'data',
-    title: L('Data', 'Veri'),
-    object: L('filing cabinets, arranged like an index', 'dosya dolapları, dizin gibi dizili'),
+    title: L('Databases and SQL', 'Veritabanı ve SQL'),
+    object: L('We forget. The archive doesn’t.', 'Biz unuturuz, arşiv unutmaz'),
     body: L(
-      'SQL Server: schema design, query tuning, indexes, backups, and the quiet maintenance underneath all of it. Code gets rewritten; data is forever. I treat the database like the part we will still have in ten years — because it is.',
-      'SQL Server: şema tasarımı, sorgu iyileştirme, indeksler, yedekler ve hepsinin altındaki sessiz bakım. Kod yeniden yazılır; veri kalıcıdır. Veritabanına, on yıl sonra da elimizde olacak parça gibi davranırım — çünkü öyle.',
+      'SQL Server. That is the whole list. My projects have not grown big enough to need Redis yet, but when they do I will move over and carry on. Cloud this, managed that — no need at all. You set up your own server, you drop it in, and lovely: all the control is yours.',
+      'SQL Server. Başka da bir şey yok. Projelerim henüz Redis gerektirecek kadar büyümedi ama büyüyünce ona geçerim devam ederim. Bulutmuş oymuş buymuş hiç gerek yok. Sunucunu kendin kuruyorsun içine bunu basıyorsun oh mis gibi tüm kontrol sende.',
     ),
   },
   {
     id: 'infrastructure',
-    title: L('Infrastructure', 'Altyapı'),
-    object: L(
-      'an open rack: two Windows, one penguin, cables into the earth',
-      'açık kabin: iki Windows, bir penguen, toprağa inen kablolar',
-    ),
+    title: L('Servers and Infrastructure', 'Sunucular ve Altyapı'),
+    object: L('Speaking of servers...', 'Sunucu demişken...'),
     body: L(
-      'Three dedicated machines — two Windows, one Linux. Web server, backups, monitoring: set up by me, run by me. No cloud between me and the metal. When something breaks at 3 a.m., the person it wakes is also the person who can fix it.',
-      'Üç fiziksel sunucu — ikisi Windows, biri Linux. Web sunucusu, yedekler, izleme: hepsini ben kurdum, ben işletiyorum. Metalle aramda bulut yok. Gece üçte bir şey bozulursa, uyandırdığı kişiyle tamir edebilen kişi aynı.',
+      'One dedicated Windows box, one Windows VDS and one Debian VPS. Windows makes life easy for .NET + MSSQL. Web hosting, backups, databases... I set every bit of it up, and the person you would ring for support at 3 a.m. is also me.',
+      '1 Dedicated Windows, 1 VDS Windows ve 1 VPS Debian sunucum var. .NET+MSSQL için Windows kolaylık oluyor. Web hosting, yedekler, database... Her şeyi ben kuruyorum ve gece 3’te destek için arayacağınız kişi yine benim.',
     ),
   },
   {
     id: 'security',
     title: L('Security', 'Güvenlik'),
-    object: L(
-      'camera mast, barbed wire, a safe labelled .env',
-      'kamera direği, dikenli tel, üzerinde .env yazan kasa',
-    ),
+    object: L('Beware of the dog', 'Dikkat köpek çıkabilir'),
     body: L(
-      'Secure code, correct permissions, certificates that never lapse, logs that actually get read — and secrets that stay in the safe. Security is mostly refusing to do the stupid thing, daily, forever. Done right, it looks like nothing happening. The cameras, by the way, have been with you since the arch.',
-      'Güvenli kod, doğru yetkiler, süresi geçmeyen sertifikalar, gerçekten okunan loglar — ve kasada kalan sırlar. Güvenlik çoğunlukla aptalca şeyi yapmayı reddetmektir; her gün, sonsuza dek. Doğru yapılınca hiçbir şey olmuyormuş gibi görünür. Bu arada kameralar, kemerin altından geçtiğinizden beri sizinle.',
+      'Security is mostly knowing not to do the stupid thing. "Don’t put .env in the public folder." "Mind your authentication and your authorization."... Every day, every second. Done right, you look like you are doing nothing at all. But one second of an open hole is enough to make you question your entire life.',
+      'Güvenlik genelde aptalca şeyi yapmamayı bilmektir. ".env’i public klasöre koyma", "authentication ve authorization’a dikkat et"... Her gün, Her saniye. Doğru yapıldığında ise hiç iş yapmıyormuş gibi görünürsünüz. Ama bir saniyelik güvenlik açığı size hayatı sorgulatmaya yeter.',
     ),
   },
   {
     id: 'shipping',
-    title: L('Shipping', 'Sevkiyat'),
-    object: L('conveyor: build, test, prod', 'konveyör: build, test, prod'),
+    title: L('Shipping Software', 'Yazılımı Yayınlama'),
+    object: L('We’ll just test it in prod...', 'Canlıda test ederiz yav...'),
     body: L(
-      'CI/CD, deployment automation, releases. The pipeline exists so that shipping is boring: build, test, out the door — no ceremony, no heroics. Exciting deployments are how you learn the value of boring ones. I did that learning so it stays boring.',
-      'CI/CD, dağıtım otomasyonu, sürümler. Pipeline, yayına almak sıkıcı olsun diye var: derle, test et, kapıdan çıkar — tören yok, kahramanlık yok. Heyecanlı dağıtımlar, sıkıcılarının kıymetini öğretir. O dersi ben aldım ki sıkıcı kalsın.',
+      'Software that was never shipped never existed... Then again, offline software exists too... Never mind, philosophy is clearly not my thing. CI/CD, tests, versions, releases, git pull push merge rebase squash and dozens more. We will handle all of it, mate.',
+      'Yayınlanmamış yazılım hiç var olmamıştır... Ama çevrimdışı yazılımlar da var gerçi... Neyse ne ya felsefe yapamadım. CI/CD, testler, versiyonlar, yayına alma, git pull push merge rebase squash ve daha onlarcası işte. Hallederiz abi hepsini.',
     ),
   },
   {
     id: 'contact',
     title: L('Contact', 'İletişim'),
-    object: L('four turning marks, and a mailbox', 'dönen dört işaret ve bir posta kutusu'),
+    object: L(
+      '$"{DateTime.Now.Year - 2000}" years old and single :)',
+      '$"{DateTime.Now.Year - 2000}" yaşında ve bekarım :)',
+    ),
     // The gesture differs by device, so the sentence names the one the reader
     // actually has. Everything else about the station is identical.
     body: isTouch
       ? L(
-          'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and tap. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
-          'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp dokunun. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
+          'The road is not over yet. Go to the tokens and tap, or reach me at mr.muratozcan@gmail.com, and let us keep the journey going. Maybe we work out together what my title ought to be.',
+          'Yol henüz bitmedi. Tokenlere gidip dokunun ya da mr.muratozcan@gmail.com adresinden ulaşın, yolculuğa devam edelim. Belki ünvanımın ne olması gerektiğini de beraber çözeriz.',
         )
       : L(
-          'mr.muratozcan@gmail.com — or take one out of the air: aim at a mark and press E. And if somewhere on this walk you worked out what my title should be, that is the subject line I want.',
-          'mr.muratozcan@gmail.com — ya da havadan birini alın: bir işarete nişan alıp E’ye basın. Ve bu yürüyüşte unvanımın ne olması gerektiğini çözdüyseniz, e-postanın konusu hazır demektir.',
+          'The road is not over yet. Go to the tokens and press E, or reach me at mr.muratozcan@gmail.com, and let us keep the journey going. Maybe we work out together what my title ought to be.',
+          'Yol henüz bitmedi. Tokenlere gidip E’ye basın ya da mr.muratozcan@gmail.com adresinden ulaşın, yolculuğa devam edelim. Belki ünvanımın ne olması gerektiğini de beraber çözeriz.',
         ),
   },
 ];

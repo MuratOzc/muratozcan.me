@@ -52,8 +52,8 @@ export function buildArch(
       id: 'arch',
       title: L('muratozcan.me', 'muratozcan.me'),
       body: L(
-        'Follow the path. It goes all the way round and comes back here.',
-        'Yolu takip edin. Dünyayı dolaşıp buraya geri gelir.',
+        'You are about to meet spherical geometry. Or you just did. Either way, expect to leave a little dizzy.',
+        'Küresel geometri ile tanışacaksınız. Belki de çoktan tanıştınız. Baş döndürücü bir deneyim sizi bekliyor.',
       ),
       gv: at,
       radius: units(4),
