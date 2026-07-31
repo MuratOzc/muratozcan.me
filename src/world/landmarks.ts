@@ -26,7 +26,9 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
   // ---- the triangle with three right angles
   const triangle = buildTriangle(world);
   objects.push(...triangle.objects);
-  pois.push(triangle.poi);
+  if (triangle.poi) {
+    pois.push(triangle.poi);
+  }
 
   // ---- the chess table, dead centre of the triangle: wander in past the
   // painted lines and there is a game waiting for you, already lost.

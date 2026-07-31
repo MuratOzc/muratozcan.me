@@ -87,7 +87,7 @@ export function triangleCenter(): { gv: ReturnType<typeof placeOnGround>; yaw: n
   return { gv: groundGV(centroid), yaw: yawToward(centroid, corners()[0]) };
 }
 
-export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi: Poi } {
+export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi: Poi | null } {
   const objects: HyperObject[] = [];
   const C = corners();
 
@@ -146,15 +146,6 @@ export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi:
   // line is most likely to be noticed.
   return {
     objects,
-    poi: {
-      id: 'triangle',
-      title: L('A triangle with three right angles', 'Üç dik açılı bir üçgen'),
-      body: L(
-        'Every corner of this triangle is exactly 90 degrees. Walk it and check. I like confusing things — and on a sphere, the ground itself plays along.',
-        'Bu üçgenin her köşesi tam 90 derece. Yürüyüp kontrol edin. Kafa karıştıran şeyleri severim — kürede zeminin kendisi de bu oyuna katılıyor.',
-      ),
-      gv: groundGV(C[0]),
-      radius: 0.55,
-    },
+    poi: null,
   };
 }
