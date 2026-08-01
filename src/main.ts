@@ -295,6 +295,7 @@ async function boot(): Promise<void> {
     controls.update(dt);
     for (const watcher of stations.watchers) watcher.update(world.worldGV, dt);
     for (const tick of stations.tickers) tick(world.worldGV, dt);
+    for (const tick of landmarks.tickers) tick(world.worldGV, dt);
     world.render();
     panel.update(pois, world.worldGV, dt);
 

@@ -21,11 +21,11 @@ import { localizedCanvasTexture } from '../text';
 /**
  * The chess table: Özcan – Carlsen, 1–0.
  *
- * The board shows the final position of a scholar's mate (1.e4 e5 2.Bc4 Nc6
- * 3.Qh5 Nf6 4.Qxf7#), white queen sitting on f7, black king with nowhere to
- * go. The scoreboard records the result with tournament-book solemnity and
- * the scoresheets carry the moves in a player's hand. Whether the game took
- * place is between the placard and its conscience.
+ * The board plays the game rather than reporting it. A scholar's mate (1.e4 e5
+ * 2.Bc4 Nc6 3.Qh5 Nf6 4.Qxf7#) runs on a loop: seven plies, the queen takes on
+ * f7, the position sits mated long enough to be read, and the pieces go home.
+ * The scoreboard and the scoresheets are the record of that game and do not
+ * move. Whether the game took place is between the placard and its conscience.
  *
  * Everything is laid out as a real tournament board would be: players face
  * each other along ±x, the clock sits at the far edge where both can read it,
@@ -35,8 +35,11 @@ import { localizedCanvasTexture } from '../text';
  *
  * Pieces are turned Staunton profiles at true proportions — king 1.8 squares
  * tall, base a shade under one square wide — revolved from smooth paths, not
- * five-point polylines. All white merges into one geometry and all black into
- * another: thirty-one pieces, two draw calls.
+ * five-point polylines.
+ *
+ * A piece earns its own node by moving. The seven the game touches get one;
+ * the other twenty-five stay merged into one geometry per side, which is why
+ * this animates in nine draw calls rather than thirty-three.
  */
 
 /** One board square. Everything about the set is expressed as a multiple. */
@@ -57,20 +60,50 @@ const EBONY = 0x6d5745;
 const MONO = 'ui-monospace, Consolas, monospace';
 
 type PieceKind = 'P' | 'R' | 'N' | 'B' | 'Q' | 'K';
+/** [file 0-7 = a-h, rank 0-7 = 1-8] */
+type Square = [number, number];
 
-/** [kind, file 0-7 = a-h, rank 0-7 = 1-8] */
-const WHITE: Array<[PieceKind, number, number]> = [
+/** The men who never move. Everything the game touches is in MOVERS instead. */
+const WHITE_STATIC: Array<[PieceKind, number, number]> = [
   ['P', 0, 1], ['P', 1, 1], ['P', 2, 1], ['P', 3, 1], ['P', 5, 1], ['P', 6, 1], ['P', 7, 1],
-  ['P', 4, 3],                       // e4
   ['R', 0, 0], ['N', 1, 0], ['B', 2, 0], ['K', 4, 0], ['N', 6, 0], ['R', 7, 0],
-  ['B', 2, 3],                       // Bc4
-  ['Q', 5, 6],                       // Qxf7#
 ];
-const BLACK: Array<[PieceKind, number, number]> = [
+const BLACK_STATIC: Array<[PieceKind, number, number]> = [
   ['P', 0, 6], ['P', 1, 6], ['P', 2, 6], ['P', 3, 6], ['P', 6, 6], ['P', 7, 6],
-  ['P', 4, 4],                       // e5
   ['R', 0, 7], ['B', 2, 7], ['Q', 3, 7], ['K', 4, 7], ['B', 5, 7], ['R', 7, 7],
-  ['N', 2, 5], ['N', 5, 5],          // Nc6, Nf6
+];
+
+/** A piece with somewhere to be. White faces +x, black -x. */
+const MOVERS: Array<{ kind: PieceKind; facing: 1 | -1; start: Square }> = [
+  { kind: 'P', facing: 1, start: [4, 1] },   // 0  e2 pawn
+  { kind: 'P', facing: -1, start: [4, 6] },  // 1  e7 pawn
+  { kind: 'B', facing: 1, start: [5, 0] },   // 2  f1 bishop
+  { kind: 'N', facing: -1, start: [1, 7] },  // 3  b8 knight
+  { kind: 'Q', facing: 1, start: [3, 0] },   // 4  d1 queen
+  { kind: 'N', facing: -1, start: [6, 7] },  // 5  g8 knight
+  { kind: 'P', facing: -1, start: [5, 6] },  // 6  f7 pawn — the one that pays
+];
+
+/** How high a piece rides between squares. A knight goes over, not through. */
+const SLIDE_LIFT = 0.5 * SQ;
+const HOP_LIFT = 1.5 * SQ;
+
+interface Ply {
+  mover: number;
+  to: Square;
+  lift: number;
+  /** The mover this ply takes off the board. */
+  captures?: number;
+}
+
+const PLIES: Ply[] = [
+  { mover: 0, to: [4, 3], lift: SLIDE_LIFT },              // 1. e4
+  { mover: 1, to: [4, 4], lift: SLIDE_LIFT },              //    e5
+  { mover: 2, to: [2, 3], lift: SLIDE_LIFT },              // 2. Bc4
+  { mover: 3, to: [2, 5], lift: HOP_LIFT },                //    Nc6
+  { mover: 4, to: [7, 4], lift: SLIDE_LIFT },              // 3. Qh5
+  { mover: 5, to: [5, 5], lift: HOP_LIFT },                //    Nf6
+  { mover: 4, to: [5, 6], lift: SLIDE_LIFT, captures: 6 }, // 4. Qxf7#
 ];
 
 const MOVES: Array<[string, string]> = [
@@ -79,6 +112,23 @@ const MOVES: Array<[string, string]> = [
   ['Qh5', 'Nf6'],
   ['Qxf7#', ''],
 ];
+
+// ----------------------------------------------------------------- the timing
+//
+// A ply is think, then move: the piece sits while its owner decides and glides
+// at the end, which is the order a game actually happens in. The whole loop
+// comes to a little over twenty seconds — about as long as a passer-by will
+// stand at a table on their way somewhere.
+const DWELL = 1.05;
+const TRAVEL = 0.78;
+const PLY = DWELL + TRAVEL;
+const GAME = PLIES.length * PLY;
+/** How long the mate sits before the position is broken up. */
+const HOLD = 6.0;
+const RESET = 1.5;
+/** An empty beat on the starting position, so the first move reads as a move. */
+const SETTLE = 1.2;
+const CYCLE = GAME + HOLD + RESET + SETTLE;
 
 // ---------------------------------------------------------------- the pieces
 
@@ -277,6 +327,22 @@ function square(file: number, rank: number): [number, number] {
   return [(3.5 - rank) * SQ, (3.5 - file) * SQ];
 }
 
+/**
+ * How far off true a piece stands on a given square: enough that the set reads
+ * as played rather than laid out by machine, small enough that nothing leaves
+ * its square. Keyed on the square, not the piece, so a man who moves picks up
+ * the sloppiness of wherever he lands and lands the same way every loop.
+ */
+function jitter(file: number, rank: number): [number, number, number] {
+  const n = file * 8 + rank;
+  return [
+    (((n * 7919) % 97) / 97 - 0.5) * 0.06 * SQ,
+    (((n * 6271) % 89) / 89 - 0.5) * 0.06 * SQ,
+    (((n * 5417) % 83) / 83 - 0.5) * 0.14,
+  ];
+}
+
+/** Everything that stays put, in one buffer per side. */
 function sideGeometry(
   pieces: Array<[PieceKind, number, number]>,
   facing: 1 | -1,
@@ -284,12 +350,7 @@ function sideGeometry(
   const parts: BufferGeometry[] = [];
   for (const [kind, file, rank] of pieces) {
     const [x, z] = square(file, rank);
-    // Enough of a nudge that the set reads as played rather than laid out by
-    // machine, small enough that nothing leaves its square.
-    const n = file * 8 + rank;
-    const jx = (((n * 7919) % 97) / 97 - 0.5) * 0.06 * SQ;
-    const jz = (((n * 6271) % 89) / 89 - 0.5) * 0.06 * SQ;
-    const jr = (((n * 5417) % 83) / 83 - 0.5) * 0.14;
+    const [jx, jz, jr] = jitter(file, rank);
     for (const g of pieceGeometry(kind)) {
       g.rotateY(facing * (Math.PI / 2) + jr);
       g.translate(x + jx, BOARD_Y, z + jz);
@@ -297,6 +358,42 @@ function sideGeometry(
     }
   }
   return merge(parts);
+}
+
+/** One mover, about its own foot: the node carries square and jitter instead. */
+function moverGeometry(kind: PieceKind, facing: 1 | -1): BufferGeometry {
+  const parts = pieceGeometry(kind);
+  for (const g of parts) g.rotateY(facing * (Math.PI / 2));
+  return merge(parts);
+}
+
+interface Pose {
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+}
+
+function restPose([file, rank]: Square): Pose {
+  const [x, z] = square(file, rank);
+  const [jx, jz, jr] = jitter(file, rank);
+  return { x: x + jx, y: BOARD_Y, z: z + jz, rot: jr };
+}
+
+/**
+ * Where a taken man ends up: off the board, at the elbow of the player who
+ * took him, standing rather than tipped — this is a friendly game.
+ */
+const CAPTURED: Pose = { x: 0.345, y: TOP_Y + 0.002, z: 0.145, rot: -0.42 };
+
+function glide(a: Pose, b: Pose, u: number, lift: number): Pose {
+  const s = u * u * (3 - 2 * u);
+  return {
+    x: a.x + (b.x - a.x) * s,
+    y: a.y + (b.y - a.y) * s + Math.sin(Math.PI * u) * lift,
+    z: a.z + (b.z - a.z) * s,
+    rot: a.rot + (b.rot - a.rot) * s,
+  };
 }
 
 // -------------------------------------------------------------------- canvas
@@ -730,11 +827,16 @@ function addScoresheet(
   object.addGeometry(world.shared, pen, { color: 0x3f4a58, ambient: 0.5 });
 }
 
+export interface ChessResult {
+  object: HyperObject;
+  tick: (worldGV: GyroVector, dt: number) => void;
+}
+
 export function buildChessTable(
   world: HyperWorld,
   at: GyroVector,
   yaw: number,
-): HyperObject {
+): ChessResult {
   const object = new HyperObject(at);
   object.rotation.y = yaw;
 
@@ -790,15 +892,23 @@ export function buildChessTable(
     receiveShadow: false,
   });
 
-  object.addGeometry(world.shared, sideGeometry(WHITE, 1), {
-    color: 0xf4edda,
-    ambient: 0.5,
-  });
   // "Black" is a warm rosewood — true black swallows every contour this
   // lighting model has, and the turnings are the whole point of the set.
-  object.addGeometry(world.shared, sideGeometry(BLACK, -1), {
-    color: 0x8a6b56,
-    ambient: 0.46,
+  const WHITE_MEN = { color: 0xf4edda, ambient: 0.5 };
+  const BLACK_MEN = { color: 0x8a6b56, ambient: 0.46 };
+  object.addGeometry(world.shared, sideGeometry(WHITE_STATIC, 1), WHITE_MEN);
+  object.addGeometry(world.shared, sideGeometry(BLACK_STATIC, -1), BLACK_MEN);
+
+  const movers = MOVERS.map(({ kind, facing, start }) => {
+    const node = new Group();
+    object.add(node);
+    object.addGeometry(
+      world.shared,
+      moverGeometry(kind, facing),
+      facing === 1 ? WHITE_MEN : BLACK_MEN,
+      node,
+    );
+    return { node, home: restPose(start) };
   });
 
   // ---- clock at the far edge, where both players and the visitor can read it.
@@ -881,5 +991,58 @@ export function buildChessTable(
   );
 
   world.add(object);
-  return object;
+
+  // ---------------- the game.
+  //
+  // Every pose is a pure function of one clock, so a dropped frame or a
+  // backgrounded tab cannot leave a piece stranded between squares.
+  // `rest[m][p]` is where mover m stands once p plies have been played.
+  const rest: Pose[][] = movers.map((m) => [m.home]);
+  PLIES.forEach((ply, p) => {
+    rest.forEach((poses, m) => {
+      poses.push(
+        ply.mover === m ? restPose(ply.to) : ply.captures === m ? CAPTURED : poses[p],
+      );
+    });
+  });
+  const FINAL = PLIES.length;
+
+  let elapsed = 0;
+
+  const poseAt = (m: number, at: number): Pose => {
+    if (at >= GAME + HOLD) {
+      // Break up the position: everyone home at once, the way a game is reset.
+      const u = Math.min(1, (at - GAME - HOLD) / RESET);
+      return glide(rest[m][FINAL], movers[m].home, u, SLIDE_LIFT);
+    }
+    if (at >= GAME) return rest[m][FINAL];
+
+    const p = Math.floor(at / PLY);
+    const local = at - p * PLY;
+    const ply = PLIES[p];
+
+    // Thinking. Nothing on the board moves; the clock is running anyway.
+    if (local < DWELL) return rest[m][p];
+
+    const u = (local - DWELL) / TRAVEL;
+    if (ply.mover === m) return glide(rest[m][p], rest[m][p + 1], u, ply.lift);
+    // The man being taken comes off before the queen lands on him, because the
+    // alternative is two pieces sharing f7 for a fifth of a second.
+    if (ply.captures === m) {
+      return glide(rest[m][p], rest[m][p + 1], Math.min(1, u / 0.62), 0.8 * SQ);
+    }
+    return rest[m][p];
+  };
+
+  const tick = (_worldGV: GyroVector, dt: number) => {
+    elapsed = (elapsed + dt) % CYCLE;
+
+    for (let m = 0; m < movers.length; m++) {
+      const pose = poseAt(m, elapsed);
+      movers[m].node.position.set(pose.x, pose.y, pose.z);
+      movers[m].node.rotation.y = pose.rot;
+    }
+  };
+
+  return { object, tick };
 }

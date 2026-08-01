@@ -1,4 +1,4 @@
-import { type HyperObject, type HyperWorld } from '../engine';
+import { type GyroVector, type HyperObject, type HyperWorld } from '../engine';
 import { L } from '../content/i18n';
 import { units, type Poi } from './placement';
 import { buildChessTable } from './props/chess';
@@ -17,11 +17,14 @@ import { buildTriangle, triangleCenter } from './props/triangle';
 export interface Landmarks {
   objects: HyperObject[];
   pois: Poi[];
+  /** Called every frame; how landmarks animate. */
+  tickers: Array<(worldGV: GyroVector, dt: number) => void>;
 }
 
 export function buildLandmarks(world: HyperWorld): Landmarks {
   const objects: HyperObject[] = [];
   const pois: Poi[] = [];
+  const tickers: Landmarks['tickers'] = [];
 
   // ---- the triangle with three right angles
   const triangle = buildTriangle(world);
@@ -31,9 +34,11 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
   }
 
   // ---- the chess table, dead centre of the triangle: wander in past the
-  // painted lines and there is a game waiting for you, already lost.
+  // painted lines and there is a game being lost, over and over.
   const centre = triangleCenter();
-  objects.push(buildChessTable(world, centre.gv, centre.yaw));
+  const chess = buildChessTable(world, centre.gv, centre.yaw);
+  objects.push(chess.object);
+  tickers.push(chess.tick);
   pois.push({
     id: 'chess',
     title: L('Özcan 1 – 0 Carlsen', 'Özcan 1 - 0 Carlsen'),
@@ -52,5 +57,5 @@ export function buildLandmarks(world: HyperWorld): Landmarks {
   objects.push(...easels.objects);
   pois.push(easels.poi);
 
-  return { objects, pois };
+  return { objects, pois, tickers };
 }
