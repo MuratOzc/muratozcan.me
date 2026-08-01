@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Group } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 
 /**
  * Station 4: backend — thirty gears in a case, all of them driven.
@@ -154,7 +154,7 @@ function gearGeometry(teeth: number): BufferGeometry {
     spoke.translate(Math.cos(a) * mid, Math.sin(a) * mid, 0);
     parts.push(spoke);
   }
-  return mergeGeometries(parts);
+  return merge(parts);
 }
 
 interface Gear {
@@ -310,7 +310,7 @@ export function buildGears(world: HyperWorld, at: GyroVector, yaw: number): Gear
     rail.translate(0, y, 0.155);
     frame.push(rail);
   }
-  object.addGeometry(world.shared, mergeGeometries(frame), {
+  object.addGeometry(world.shared, merge(frame), {
     color: 0xc9a35e,
     ambient: 0.52,
   });

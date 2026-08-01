@@ -9,7 +9,6 @@ import {
   WebGLRenderTarget,
   type BufferGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   HyperObject,
@@ -17,6 +16,7 @@ import {
   type HyperMaterial,
   type HyperWorld,
 } from '../../engine';
+import { merge } from '../geometry';
 
 /**
  * Station 5: frontend — a monitor on a post, showing this site.
@@ -175,7 +175,7 @@ export function buildMonitor(
   const stem = new RoundedBoxGeometry(0.11, 0.3, 0.13, 3, 0.018);
   stem.translate(0, -0.36, BODY_BACK - 0.065);
   mount.push(stem);
-  const merged = mergeGeometries(mount);
+  const merged = merge(mount);
   panelPart(merged);
   object.addGeometry(world.shared, merged, { color: METAL, ambient: 0.52 });
 

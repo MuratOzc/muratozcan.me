@@ -1,7 +1,7 @@
 import { BoxGeometry, CylinderGeometry, type BufferGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 
 /**
  * Station 10: contact — the mailbox, with its flag up.
@@ -12,14 +12,6 @@ import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
  * like buttons and were not, and a thing that invites a click and ignores it
  * teaches the visitor that nothing here responds.
  */
-
-/**
- * RoundedBoxGeometry is non-indexed while the primitives are indexed, and
- * mergeGeometries refuses to mix the two — flatten everything first.
- */
-function merge(parts: BufferGeometry[]): BufferGeometry {
-  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
-}
 
 /** The classic silhouette: box bottom, half-cylinder top, capped ends. */
 function mailboxBody(): BufferGeometry {

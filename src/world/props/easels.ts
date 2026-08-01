@@ -10,10 +10,10 @@ import {
   type BufferGeometry,
   type Texture,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type HyperWorld } from '../../engine';
 import { L } from '../../content/i18n';
+import { merge } from '../geometry';
 import { placeOnGround, units, type Poi } from '../placement';
 
 /**
@@ -204,7 +204,7 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
       ),
     );
   }
-  object.addGeometry(world.shared, mergeGeometries(legs), {
+  object.addGeometry(world.shared, merge(legs), {
     color: WOOD,
     ambient: 0.54,
   });
@@ -227,7 +227,7 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
   const back = new RoundedBoxGeometry(span * 0.72, 0.045, 0.05, 3, 0.012);
   back.translate(0, backY, frameZ(backY));
   rails.push(back);
-  object.addGeometry(world.shared, mergeGeometries(rails), {
+  object.addGeometry(world.shared, merge(rails), {
     color: WOOD_DARK,
     ambient: 0.5,
   });
@@ -267,7 +267,7 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
 
     // The pegs that hold the canvas on the shelf. Flanking it rather than in
     // front of it, which is the only placement that cannot occlude the picture.
-    const pegs = mergeGeometries(
+    const pegs = merge(
       [-1, 1].map((sx) => {
         const peg = new RoundedBoxGeometry(0.022, 0.05, 0.075, 2, 0.007);
         peg.translate(sx * (w / 2 + 0.026), ledgeTop + 0.025, ledgeZ0 + 0.095);

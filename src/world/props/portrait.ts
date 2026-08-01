@@ -7,10 +7,10 @@ import {
   SRGBColorSpace,
   type Texture,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { L } from '../../content/i18n';
+import { merge } from '../geometry';
 import { units, type Poi } from '../placement';
 import { PORTRAIT_ART } from './portraitArt';
 
@@ -127,7 +127,7 @@ export function buildPortrait(
   const lintel = new RoundedBoxGeometry(openW + BAR * 2, BAR, BAR, 3, 0.008);
   lintel.translate(0, openTop + BAR / 2, 0);
   bars.push(lintel);
-  object.addGeometry(world.shared, mergeGeometries(bars), {
+  object.addGeometry(world.shared, merge(bars), {
     color: FRAME,
     ambient: 0.45,
   });

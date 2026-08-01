@@ -4,9 +4,9 @@ import {
   TorusGeometry,
   type BufferGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 import { makeTextTexture } from '../text';
 
 /**
@@ -17,14 +17,6 @@ import { makeTextTexture } from '../text';
  * waist-high and sparse: it would stop nobody, which is accurate, because the
  * cameras already saw you coming.
  */
-
-/**
- * RoundedBoxGeometry is non-indexed while the primitives are indexed, and
- * mergeGeometries refuses to mix the two — flatten everything first.
- */
-function merge(parts: BufferGeometry[]): BufferGeometry {
-  return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)));
-}
 
 /** Half-extent of the fenced square, centred on the mast. */
 const FENCE = 2.1;
@@ -80,7 +72,7 @@ function buildFence(): { posts: BufferGeometry; wire: BufferGeometry } {
     }
   }
 
-  return { posts: mergeGeometries(posts), wire: mergeGeometries(wire) };
+  return { posts: merge(posts), wire: merge(wire) };
 }
 
 export function buildVault(

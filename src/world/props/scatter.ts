@@ -1,6 +1,6 @@
 import { BufferGeometry, Float32BufferAttribute, IcosahedronGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HyperObject, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 import { placeOnGround, toUnits, units } from '../placement';
 
 /**
@@ -93,7 +93,7 @@ function tuftGeometry(x: number, z: number, r: () => number): BufferGeometry {
     g.translate(x + (r() - 0.5) * 0.05, 0, z + (r() - 0.5) * 0.05);
     blades.push(g);
   }
-  return mergeGeometries(blades);
+  return merge(blades);
 }
 
 /**
@@ -155,7 +155,7 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
       for (let i = 0; i < tufts; i++) {
         parts.push(tuftGeometry((r() - 0.5) * 1.1, (r() - 0.5) * 1.1, r));
       }
-      object.addGeometry(world.shared, mergeGeometries(parts), {
+      object.addGeometry(world.shared, merge(parts), {
         color: GRASS[Math.floor(r() * GRASS.length)],
         ambient: 0.56,
         // Blade-thin shadows are subpixel at any distance you would see them
@@ -172,7 +172,7 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
         g.translate((r() - 0.5) * 1.2, 0, (r() - 0.5) * 1.2);
         parts.push(g);
       }
-      object.addGeometry(world.shared, mergeGeometries(parts), {
+      object.addGeometry(world.shared, merge(parts), {
         color: STONE[Math.floor(r() * STONE.length)],
         ambient: 0.54,
         mottleScale: 120,

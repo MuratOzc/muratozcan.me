@@ -11,13 +11,11 @@ import {
   type BufferGeometry,
   type Texture,
 } from 'three';
-import {
-  mergeGeometries,
-  mergeVertices,
-} from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { L, t, upper, type Localized } from '../../content/i18n';
+import { merge } from '../geometry';
 import { localizedCanvasTexture } from '../text';
 
 /**
@@ -160,7 +158,9 @@ function knightHead(): BufferGeometry {
   head.translate(0, 0.45, -0.13);
   head.rotateY(Math.PI / 2);
   head.scale(SQ, SQ, SQ);
-  // Extrusions come back non-indexed; mergeGeometries refuses a mixed batch.
+  // Extrusions come back non-indexed. Weld here rather than letting merge()
+  // flatten the batch: everything else in a piece is a lathe, and staying
+  // indexed is worth far more than the one geometry it costs to weld.
   return mergeVertices(head, 1e-6);
 }
 
@@ -296,7 +296,7 @@ function sideGeometry(
       parts.push(g);
     }
   }
-  return mergeGeometries(parts);
+  return merge(parts);
 }
 
 // -------------------------------------------------------------------- canvas

@@ -1,8 +1,8 @@
 import { PlaneGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type HyperWorld } from '../../engine';
 import type { Station } from '../../content/stations';
+import { merge } from '../geometry';
 import { facePath, placeAlongPath, units, type Poi } from '../placement';
 import { makeSignTexture } from '../text';
 
@@ -121,7 +121,7 @@ export function buildSign(
   // it is how you end up with a strut that stops short of the board.
   const strutTop = centreY + half * Math.cos(TILT) + (BOARD_T / 2) * Math.sin(TILT);
   const strutZ = centreZ + half * Math.sin(TILT) - (BOARD_T / 2) * Math.cos(TILT);
-  const strut = mergeGeometries(
+  const strut = merge(
     [-1, 1].map((sx) => {
       const s2 = new RoundedBoxGeometry(0.07, strutTop, 0.07, 4, 0.014);
       s2.translate(sx * (BOARD_W / 2 - 0.14), strutTop / 2, strutZ + 0.035);

@@ -6,7 +6,6 @@ import {
   Vector3,
   type BufferGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   HyperObject,
   unitToPoincare,
@@ -17,6 +16,7 @@ import {
 } from '../../engine';
 import { L, t, onLangChange } from '../../content/i18n';
 import { isTouch } from '../../device';
+import { merge } from '../geometry';
 import { makeIconTexture, type IconName } from '../icons';
 import { units } from '../placement';
 
@@ -205,17 +205,17 @@ export function buildContact(
     const blank: BufferGeometry[] = [];
     const body = new CylinderGeometry(DISC_R, DISC_R, DISC_T, 32);
     body.rotateX(Math.PI / 2);
-    blank.push(body.toNonIndexed());
+    blank.push(body);
     for (const s of [-1, 1]) {
       const rim = new CylinderGeometry(DISC_R, DISC_R - 0.03, 0.02, 32, 1, true);
       rim.rotateX(Math.PI / 2);
       rim.scale(1, 1, s);
       rim.translate(0, 0, s * DISC_T * 0.5);
-      blank.push(rim.toNonIndexed());
+      blank.push(rim);
     }
     object.addGeometry(
       world.shared,
-      mergeGeometries(blank),
+      merge(blank),
       { color: BRASS, ambient: 0.5 },
       node,
     );

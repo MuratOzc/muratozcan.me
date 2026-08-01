@@ -5,7 +5,6 @@ import {
   Vector3,
   type BufferGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import {
   HyperObject,
@@ -13,6 +12,7 @@ import {
   type HyperMaterial,
   type HyperWorld,
 } from '../../engine';
+import { merge } from '../geometry';
 import { makeTextTexture } from '../text';
 
 /**
@@ -190,7 +190,7 @@ export function buildConveyor(
     brace.translate(0, 0.24, sz * 0.25);
     frame.push(brace);
   }
-  object.addGeometry(world.shared, mergeGeometries(frame), {
+  object.addGeometry(world.shared, merge(frame), {
     color: STEEL,
     ambient: 0.52,
   });
@@ -206,9 +206,9 @@ export function buildConveyor(
     const round = new CylinderGeometry(BELT_R, BELT_R, BELT_W, 22);
     round.rotateX(Math.PI / 2);
     round.translate(sx * DRUM_X, DRUM_Y, 0);
-    belt.push(round.toNonIndexed());
+    belt.push(round);
   }
-  object.addGeometry(world.shared, mergeGeometries(belt), {
+  object.addGeometry(world.shared, merge(belt), {
     color: RUBBER,
     ambient: 0.44,
   });
@@ -226,17 +226,17 @@ export function buildConveyor(
     const parts: BufferGeometry[] = [];
     const barrel = new CylinderGeometry(0.088, 0.088, 0.64, 18);
     barrel.rotateX(Math.PI / 2);
-    parts.push(barrel.toNonIndexed());
+    parts.push(barrel);
     for (const sz of [-1, 1]) {
       const cap = new CylinderGeometry(0.105, 0.105, 0.03, 18);
       cap.rotateX(Math.PI / 2);
       cap.translate(0, 0, sz * 0.325);
-      parts.push(cap.toNonIndexed());
+      parts.push(cap);
       const rib = new RoundedBoxGeometry(0.026, 0.19, 0.034, 1, 0.008);
       rib.translate(0, 0.05, sz * 0.342);
       parts.push(rib);
     }
-    object.addGeometry(world.shared, mergeGeometries(parts), {
+    object.addGeometry(world.shared, merge(parts), {
       color: DARK_STEEL,
       ambient: 0.5,
     }, node);
@@ -272,7 +272,7 @@ export function buildConveyor(
   const housing = new RoundedBoxGeometry(0.2, 0.18, 0.2, 2, 0.016);
   housing.translate(X_BUILD, 1.66, 0);
   gantry.push(housing);
-  object.addGeometry(world.shared, mergeGeometries(gantry), {
+  object.addGeometry(world.shared, merge(gantry), {
     color: 0x8f979f,
     ambient: 0.5,
   });
@@ -289,10 +289,10 @@ export function buildConveyor(
     parts.push(head);
     const ram = new CylinderGeometry(0.045, 0.045, 0.62, 12);
     ram.translate(0, 0.38, 0);
-    parts.push(ram.toNonIndexed());
+    parts.push(ram);
     object.addGeometry(
       world.shared,
-      mergeGeometries(parts),
+      merge(parts),
       { color: 0x6f777f, ambient: 0.48 },
       press,
     );
@@ -311,7 +311,7 @@ export function buildConveyor(
   const lampBody = new RoundedBoxGeometry(0.16, 0.06, 0.16, 2, 0.014);
   lampBody.translate(X_TEST, 1.62, 0);
   arch.push(lampBody);
-  object.addGeometry(world.shared, mergeGeometries(arch), {
+  object.addGeometry(world.shared, merge(arch), {
     color: 0x8f979f,
     ambient: 0.5,
   });
@@ -351,7 +351,7 @@ export function buildConveyor(
       const arm = new RoundedBoxGeometry(0.12, 0.12, 0.34, 2, 0.018);
       const face = new RoundedBoxGeometry(0.16, 0.18, 0.03, 2, 0.008);
       face.translate(0, 0, 0.175);
-      return mergeGeometries([arm, face]);
+      return merge([arm, face]);
     })(),
     { color: 0x9aa2aa, ambient: 0.5 },
     pusher,
@@ -381,7 +381,7 @@ export function buildConveyor(
     end.translate(X_DIVERT + sx * 0.25, 0.29, 0.8);
     bin.push(end);
   }
-  object.addGeometry(world.shared, mergeGeometries(bin), {
+  object.addGeometry(world.shared, merge(bin), {
     color: 0xa8724f,
     ambient: 0.5,
   });
@@ -404,7 +404,7 @@ export function buildConveyor(
     jamb.translate(X_WALL, 0.98, sz * 0.45);
     wall.push(jamb);
   }
-  object.addGeometry(world.shared, mergeGeometries(wall), {
+  object.addGeometry(world.shared, merge(wall), {
     color: 0xa8a49a,
     ambient: 0.54,
     mottleScale: 55,
@@ -419,7 +419,7 @@ export function buildConveyor(
 
   // ---------------- the crates.
   const crateBody = new RoundedBoxGeometry(CRATE_W, CRATE_H, CRATE_D, 3, 0.014);
-  const strapGeo = mergeGeometries(
+  const strapGeo = merge(
     [-0.09, 0.09].map((dx) => {
       const strap = new RoundedBoxGeometry(0.022, CRATE_H + 0.012, CRATE_D + 0.012, 2, 0.005);
       strap.translate(dx, 0, 0);

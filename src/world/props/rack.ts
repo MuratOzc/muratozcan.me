@@ -9,9 +9,9 @@ import {
   TorusGeometry,
   type BufferGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 
 /**
  * Station 7: infrastructure — an open rack standing in the grass, with the
@@ -262,7 +262,7 @@ export function buildRack(
       frame.push(side);
     }
   }
-  object.addGeometry(world.shared, mergeGeometries(frame.map((g) => g.toNonIndexed())), {
+  object.addGeometry(world.shared, merge(frame), {
     color: DARK,
     ambient: 0.5,
   });
@@ -376,7 +376,7 @@ export function buildRack(
 
   object.addGeometry(
     world.shared,
-    mergeGeometries(cables.map((g) => g.toNonIndexed())),
+    merge(cables),
     { color: 0x8b939b, ambient: 0.5 },
   );
 

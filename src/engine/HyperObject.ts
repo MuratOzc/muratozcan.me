@@ -20,8 +20,8 @@ const indexed = new WeakMap<BufferGeometry, BufferGeometry>();
 /**
  * Index a geometry so shared vertices are transformed once.
  *
- * RoundedBoxGeometry and mergeGeometries both hand back non-indexed buffers —
- * three positions per triangle, nothing reused. That is ordinarily a minor
+ * RoundedBoxGeometry and the extrusions hand back non-indexed buffers — three
+ * positions per triangle, nothing reused. That is ordinarily a minor
  * waste; here the vertex shader runs two Möbius additions, a quaternion
  * transform and a tan per vertex, and runs it again for the second hemisphere
  * and again for the shadow pass. Welding is exact (positions, normals and UVs

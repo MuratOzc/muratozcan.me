@@ -1,7 +1,7 @@
 import { CylinderGeometry, Group, PlaneGeometry, type BufferGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { merge } from '../geometry';
 import { makeTextTexture } from '../text';
 
 /**
@@ -71,8 +71,8 @@ function folderStack(): { manila: BufferGeometry; tabs: BufferGeometry } {
     }
   }
   return {
-    manila: mergeGeometries(manila.map((g) => g.toNonIndexed())),
-    tabs: mergeGeometries(tabs.map((g) => g.toNonIndexed())),
+    manila: merge(manila),
+    tabs: merge(tabs),
   };
 }
 
@@ -129,7 +129,7 @@ export function buildCabinets(
     carcass.push(plinth);
     object.addGeometry(
       world.shared,
-      mergeGeometries(carcass.map((g) => g.toNonIndexed())),
+      merge(carcass),
       { color: STEEL, ambient: 0.55 },
     );
 
@@ -186,7 +186,7 @@ export function buildCabinets(
       parts.push(back);
       object.addGeometry(
         world.shared,
-        mergeGeometries(parts.map((g) => g.toNonIndexed())),
+        merge(parts),
         { color: DRAWER, ambient: 0.52 },
         node,
       );
@@ -274,12 +274,12 @@ export function buildCabinets(
 
   object.addGeometry(
     world.shared,
-    mergeGeometries(folders.map((g) => g.toNonIndexed())),
+    merge(folders),
     { color: MANILA, ambient: 0.66, receiveShadow: false },
   );
   object.addGeometry(
     world.shared,
-    mergeGeometries(sheets.map((g) => g.toNonIndexed())),
+    merge(sheets),
     { color: PAPER, ambient: 0.72, receiveShadow: false },
   );
 
