@@ -1,7 +1,11 @@
 import { Matrix3, Matrix4, Quaternion, Vector3 } from 'three';
 import { fromToRotation, geodesicTranslate, swingTwist, upVector } from './coords';
 import { mobiusAdd, mobiusAddGyr } from './mobius';
-import { tanK } from './curvature';
+import { HM, tanK } from './curvature';
+
+const scratchV = new Vector3();
+const scratchQ = new Quaternion();
+const scratchM = new Matrix4();
 
 /**
  * A GyroVector is an isometry of curved space — position *and* orientation. It
@@ -97,6 +101,31 @@ export class GyroVector {
     return new GyroVector(sum, g);
   }
 
+  /** {@link add} without allocating. `out` must be neither `this` nor `other`. */
+  composeInto(other: GyroVector, out: GyroVector): GyroVector {
+    const K = HM.K;
+    const a = this.vec;
+    const b = scratchV.copy(other.vec).applyQuaternion(scratchQ.copy(this.gyr).invert());
+    const cx = K * (a.y * b.z - a.z * b.y);
+    const cy = K * (a.z * b.x - a.x * b.z);
+    const cz = K * (a.x * b.y - a.y * b.x);
+    const d = 1 - K * (a.x * b.x + a.y * b.y + a.z * b.z);
+    const tx = a.x + b.x;
+    const ty = a.y + b.y;
+    const tz = a.z + b.z;
+    const denom = d * d + (cx * cx + cy * cy + cz * cz);
+    out.vec.set(
+      (tx * d + (cy * tz - cz * ty)) / denom,
+      (ty * d + (cz * tx - cx * tz)) / denom,
+      (tz * d + (cx * ty - cy * tx)) / denom,
+    );
+    out.gyr
+      .multiplyQuaternions(other.gyr, this.gyr)
+      .multiply(scratchQ.set(-cx, -cy, -cz, d).normalize())
+      .normalize();
+    return out;
+  }
+
   /** `-this` */
   inverse(): GyroVector {
     return new GyroVector(
@@ -157,7 +186,7 @@ export class GyroVector {
 
   /** Rotation part, as a mat3 for shader upload. */
   toMatrix3(out = new Matrix3()): Matrix3 {
-    return out.setFromMatrix4(new Matrix4().makeRotationFromQuaternion(this.gyr));
+    return out.setFromMatrix4(scratchM.makeRotationFromQuaternion(this.gyr));
   }
 
   toString(): string {

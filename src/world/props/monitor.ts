@@ -31,8 +31,8 @@ import { merge } from '../geometry';
  * That recursion is the honest joke about frontend work: it is the only layer
  * anyone ever sees, and here it is looking at itself.
  *
- * Cost is one extra scene pass, ten times a second. The shadow map is NOT
- * re-rendered:
+ * Cost is one extra scene pass, a few times a second and only while the
+ * monitor is on screen. The shadow map is NOT re-rendered:
  * the feed camera shares the viewer's chart, so the existing map is already
  * correct for it — which is the whole reason the feed uses the viewer's
  * viewpoint rather than an independent one.
@@ -40,8 +40,9 @@ import { merge } from '../geometry';
 
 const FEED_W = 640;
 const FEED_H = 400;
-/** Seconds between feed redraws. */
-const FEED_INTERVAL = 1 / 10;
+/** Sine of the apparent half-angle at which the feed runs at its full rate. */
+const FULL_RATE_SIZE = 0.3;
+const MAX_INTERVAL = 2;
 /** Screen size in authored units — matches the feed's 1.6 aspect. */
 const SCREEN_W = 1.04;
 const SCREEN_H = 0.65;
@@ -194,7 +195,7 @@ export function buildMonitor(
 
   const screen = new PlaneGeometry(SCREEN_W, SCREEN_H, 1, 1);
   panelPart(screen);
-  const screenMats: HyperMaterial[] = object.addGeometry(world.shared, screen, {
+  const screenMats: HyperMaterial[] = object.addLiveGeometry(world.shared, screen, {
     map: warmUp,
     color: 0xffffff,
     // The screen emits; it should not be shaded like paint.
@@ -222,21 +223,20 @@ export function buildMonitor(
     // an invalid operation. Wait for the world to have rendered once.
     if (!world.shared.uShadowMap.value) return;
 
-    // The feed is a second full scene pass, and the screen is visible from
-    // anywhere on the sphere, so it cannot be gated on proximity — it is gated
-    // on rate instead. A hand-sized panel reads the same at 10Hz, and skipping
-    // whole frames (rather than swapping without drawing) keeps the image
-    // stable instead of alternating recursion depths.
+    // The feed is a second full scene pass. The monitor can be in view from
+    // anywhere on the sphere, so distance cannot gate it; whether it is on
+    // screen at all can, and so can rate. A hand-sized panel reads the same at
+    // 10Hz, and skipping whole frames (rather than swapping without drawing)
+    // keeps the image stable instead of alternating recursion depths.
     //
     // Wall-clock rather than every-Nth-frame: the cost must not scale with how
-    // fast the machine happens to run.
+    // fast the machine happens to run. And slower the smaller the monitor
+    // looks, down to once every MAX_INTERVAL.
     since += dt;
-    if (since < FEED_INTERVAL) return;
+    const size = Math.min(1, object.viewSine / FULL_RATE_SIZE);
+    const interval = Math.min(MAX_INTERVAL, world.quality.auxInterval / (size * size));
+    if (since < interval || !object.inView) return;
     since = 0;
-
-    // Tickers that animate geometry run either side of this one, so the
-    // matrices this pass reads are its own responsibility.
-    world.syncMatrices();
 
     const read = frame === 0 ? null : targets[frame % 2];
     const write = targets[(frame + 1) % 2];
@@ -251,11 +251,7 @@ export function buildMonitor(
     }
 
     feedCam.rotation.copy(world.camera.rotation);
-    feedCam.updateMatrixWorld();
-
-    world.renderer.setRenderTarget(write);
-    world.renderer.render(world.scene, feedCam);
-    world.renderer.setRenderTarget(null);
+    world.renderView(feedCam, write);
 
     frame++;
   };

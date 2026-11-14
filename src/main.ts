@@ -1,4 +1,4 @@
-import { BoxGeometry, PlaneGeometry, Vector3, type BufferGeometry } from 'three';
+import { BoxGeometry, BufferAttribute, BufferGeometry, Vector3 } from 'three';
 import {
   Controls,
   GyroVector,
@@ -32,7 +32,18 @@ import { attachFullscreenButton } from './ui/fullscreen';
 import { attachOrientationHint } from './ui/orientation';
 import { createSettingsPanel } from './ui/settingsPanel';
 import { attachTouchControls } from './ui/touch';
-import { QUALITY, isTouch, onSettingsChange, settings } from './ui/settings';
+import { isTouch, onSettingsChange, settings } from './ui/settings';
+import {
+  Governor,
+  PRESET,
+  calibrate,
+  currentLevel,
+  levelCount,
+  onQualityChange,
+  setLevel,
+  type Cost,
+  type Graphics,
+} from './quality';
 
 /**
  * An empty world.
@@ -70,6 +81,7 @@ const world = new HyperWorld({
   fov: settings().fov,
 });
 world.setLightDirection(new Vector3(0.35, 0.9, 0.25));
+onQualityChange((quality) => world.setQuality(quality));
 
 const pois: Poi[] = [];
 
@@ -124,10 +136,58 @@ export function label(gv: GyroVector, title: string, body: string, radius = 0.25
 const CUBE_TILT_AXIS = new Vector3(1, 0, 1).normalize();
 const CUBE_TILT = 0.35;
 
+// FACE_SEGMENTS has to divide evenly by FACE_CHUNKS.
+const FACE_SEGMENTS = 96;
+const FACE_CHUNKS = 3;
+
+function groundChunk(reach: number, cx: number, cz: number): BufferGeometry {
+  const per = FACE_SEGMENTS / FACE_CHUNKS;
+  const step = (2 * reach) / FACE_SEGMENTS;
+  const side = per + 1;
+  const position = new Float32Array(side * side * 3);
+  const normal = new Float32Array(side * side * 3);
+  const uv = new Float32Array(side * side * 2);
+  const index = new Uint16Array(per * per * 6);
+
+  for (let j = 0; j <= per; j++) {
+    for (let i = 0; i <= per; i++) {
+      const ix = cx * per + i;
+      const iz = cz * per + j;
+      const v = j * side + i;
+      // From the index on the WHOLE face's lattice, never from the chunk's
+      // origin: chunks must produce identical bits along a shared edge.
+      position[v * 3] = ix * step - reach;
+      position[v * 3 + 2] = iz * step - reach;
+      normal[v * 3 + 1] = 1;
+      uv[v * 2] = ix / FACE_SEGMENTS;
+      uv[v * 2 + 1] = 1 - iz / FACE_SEGMENTS;
+    }
+  }
+
+  let k = 0;
+  for (let j = 0; j < per; j++) {
+    for (let i = 0; i < per; i++) {
+      const a = j * side + i;
+      const b = a + side;
+      index.set([a, b, a + 1, b, b + 1, a + 1], k);
+      k += 6;
+    }
+  }
+
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(position, 3));
+  g.setAttribute('normal', new BufferAttribute(normal, 3));
+  g.setAttribute('uv', new BufferAttribute(uv, 2));
+  g.setIndex(new BufferAttribute(index, 1));
+  return g;
+}
+
 function buildGround(): void {
   const FACE_REACH = 1 / UNIT_SCALE;
-  const groundGeo = new PlaneGeometry(FACE_REACH * 2, FACE_REACH * 2, 96, 96);
-  groundGeo.rotateX(-Math.PI / 2);
+  const chunks: BufferGeometry[] = [];
+  for (let cz = 0; cz < FACE_CHUNKS; cz++) {
+    for (let cx = 0; cx < FACE_CHUNKS; cx++) chunks.push(groundChunk(FACE_REACH, cx, cz));
+  }
 
   const axis = (x: number, y: number, z: number) =>
     new Vector3(x, y, z).applyAxisAngle(CUBE_TILT_AXIS, CUBE_TILT);
@@ -143,15 +203,23 @@ function buildGround(): void {
   ];
 
   for (const [normal, reference] of FACES) {
-    const tile = new HyperObject(placeOnGroundVec(normal));
-    tile.rotation.y = groundYaw(normal, reference);
-    tile.addGeometry(world.shared, groundGeo, {
-      color: 0x8ab967,
-      ambient: 0.62,
-      mottleScale: 34,
-      mottleAmount: 0.3,
-    });
-    world.add(tile);
+    const at = placeOnGroundVec(normal);
+    const yaw = groundYaw(normal, reference);
+    for (const chunk of chunks) {
+      // Every chunk keeps the FACE's placement: the Unit lift is not linear,
+      // so a chunk placed at its own centre would leave the common surface.
+      const tile = new HyperObject(at);
+      tile.rotation.y = yaw;
+      tile.backdrop = true;
+      tile.addGeometry(world.shared, chunk, {
+        color: 0x8ab967,
+        ambient: 0.62,
+        mottleScale: 34,
+        mottleAmount: 0.3,
+        castShadow: false,
+      });
+      world.add(tile);
+    }
   }
 }
 
@@ -202,17 +270,30 @@ async function boot(): Promise<void> {
   };
   onLangChange(paintHelp);
 
+  const governor = new Governor();
+  const timeFrame = (): Cost => {
+    const start = performance.now();
+    world.render();
+    const cpu = performance.now() - start;
+    world.finish();
+    return { cpu, total: performance.now() - start };
+  };
+  // Timing frames means nothing before warmUp has compiled the shaders.
+  let warm = false;
+  let graphics: Graphics | null = null;
+
   onSettingsChange((s) => {
     world.setFov(s.fov);
     controls.sensitivityScale = s.sensitivity;
     controls.invertLook = s.invertLook;
     controls.headBob = s.headBob ? 0.018 : 0;
 
-    const q = QUALITY[s.quality];
-    world.setPixelRatioCap(s.resolution);
-    world.setSamples(s.antialias);
-    world.setShadowMapSize(q.shadowMapSize);
-    world.setShadowsEnabled(q.shadows);
+    if (s.graphics !== graphics) {
+      graphics = s.graphics;
+      if (graphics !== 'auto') setLevel(PRESET[graphics]);
+      else if (warm) calibrate(timeFrame);
+      governor.reset();
+    }
 
     help.hidden = !s.showHelp;
     hud.hidden = !s.showDetails;
@@ -282,7 +363,9 @@ async function boot(): Promise<void> {
     skeleton.objects.length + stations.objects.length + landmarks.objects.length;
 
   function frame(now: number) {
-    const dt = Math.min((now - last) / 1000, 0.1);
+    const started = performance.now();
+    const elapsed = (now - last) / 1000;
+    const dt = Math.min(elapsed, 0.1);
     last = now;
     acc += dt;
     frames++;
@@ -314,15 +397,22 @@ async function boot(): Promise<void> {
         // spike count does not move, the cause is something other than a bad
         // delta.
         `<b>mouse</b>     peak ${controls.largestDelta.toFixed(0)}px  ·  ${controls.rejectedSpikes} spike${controls.rejectedSpikes === 1 ? '' : 's'} dropped\n` +
+        `<b>graphics</b>  ${graphics}  ·  pixels ${currentLevel().pixels + 1}/${levelCount('pixels')}, scene ${currentLevel().scene + 1}/${levelCount('scene')}  ·  ${canvas.width}×${canvas.height}  ·  ${world.renderer.info.render.calls} draws\n` +
         `<b>fps</b>       ${fps.toFixed(0)}`;
     }
 
+    if (graphics === 'auto') governor.frame(elapsed, performance.now() - started);
     requestAnimationFrame(frame);
   }
 
   // One full frame drawn before the curtain lifts, so the first thing anyone
   // sees is the world and not a flash of clear colour.
   await stage(UI.loadingFirstFrame, 0.97);
+  // Unculled, so every program, buffer and texture reaches the GPU now and
+  // not as a hitch the first time each thing walks into view.
+  world.warmUp();
+  warm = true;
+  if (graphics === 'auto') calibrate(timeFrame);
   world.render();
   requestAnimationFrame(frame);
   loadingDone();

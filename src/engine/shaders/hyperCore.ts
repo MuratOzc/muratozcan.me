@@ -14,10 +14,10 @@
  *   TOP pass     inverts through the unit sphere (p /= w_dot) to bring the far
  *                half into view, and discards w_dot < 0.5
  *
- * The passes then split the depth buffer between them by writing gl_FragDepth
- * manually — bottom occupies [0, 0.5], top occupies [0.5, 1] reversed. The
- * overlap between 0.5 and 2.0 is deliberate: both passes draw there, the nearer
- * bottom pass wins, and the seam disappears.
+ * The passes then split the depth buffer between them — bottom occupies
+ * [0, 0.5], top occupies [0.5, 1] reversed. The overlap between 0.5 and 2.0 is
+ * deliberate: both passes draw there, the nearer bottom pass wins, and the
+ * seam disappears.
  *
  * This is why naive single-pass approaches fall apart past the quarter turn.
  * The fix is not a better projection, it is a second draw.
@@ -78,6 +78,13 @@ vec3 mobius_add(vec3 b, vec3 a, inout vec3 n) {
   n = qtransform(normalize(vec4(c, d)), n);
   return (t * d + cross(c, t)) / (d * d + dot(c, c));
 }
+
+vec3 mobius_add_point(vec3 b, vec3 a) {
+  vec3 c = uK * cross(a, b);
+  float d = 1.0 - uK * dot(a, b);
+  vec3 t = a + b;
+  return (t * d + cross(c, t)) / (d * d + dot(c, c));
+}
 `;
 
 /**
@@ -97,26 +104,38 @@ const HYPER_LIFT = /* glsl */ `
 `;
 
 export const HYPER_VERTEX = HYPER_WARP + /* glsl */ `
+in vec4 aTint;
+
+#ifdef USE_MOTTLE
 uniform vec3 uStaticPos;
 uniform mat3 uStaticRot;
+out vec4 vSphere;
+#endif
 
 #ifdef USE_SHADOWMAP
 uniform mat4 uShadowMatrix;
 out vec4 vShadowCoord;
 #endif
 
+#ifdef USE_GRID
+out vec3 vLocalPos;
+#endif
+
 out vec3 vNormal;
 out vec2 vUv;
 out float vWDot;
-out vec3 vLocalPos;
-out vec4 vSphere;
+out vec4 vTint;
 
 void main() {
   vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
   vec3 n = normalize(mat3(modelMatrix) * normal);
   vUv = uv;
-  vLocalPos = position;
+  vTint = aTint;
+  #ifdef USE_GRID
+    vLocalPos = position;
+  #endif
 ` + HYPER_LIFT + /* glsl */ `
+  #ifdef USE_MOTTLE
   // A world coordinate that does not move when the viewer does.
   //
   // uStaticPos/uStaticRot are the object's own placement WITHOUT the camera
@@ -128,11 +147,10 @@ void main() {
   // This is what makes seamless surface texturing possible. Anything derived
   // from tile-local coordinates breaks at tile boundaries; anything derived
   // from this does not, because neighbouring tiles agree here by construction.
-  vec3 dummyN = vec3(0.0, 1.0, 0.0);
-  vec3 ps = mobius_add(p, uStaticPos, dummyN);
-  ps = uStaticRot * ps;
+  vec3 ps = uStaticRot * mobius_add_point(p, uStaticPos);
   float rs = dot(ps, ps);
   vSphere = vec4(2.0 * ps, 1.0 - rs) / (1.0 + rs);
+  #endif
 
   // Place into curved space: object transform composed with the camera
   // transform, both baked into uHyperPos / uHyperRot on the CPU.
@@ -164,6 +182,15 @@ void main() {
   // The camera never translates — the world moves instead — so strip any
   // translation from the view matrix and keep only its rotation.
   gl_Position = projectionMatrix * mat4(mat3(viewMatrix)) * vec4(p, w);
+
+  // The depth split has to stay here: writing gl_FragDepth instead gives the
+  // same image but turns off early depth rejection for every material.
+  #ifdef TOP_HEMISPHERE
+    gl_Position.z = 0.5 * (gl_Position.w - gl_Position.z);
+  #endif
+  #ifdef BOTTOM_HEMISPHERE
+    gl_Position.z = 0.5 * (gl_Position.z - gl_Position.w);
+  #endif
 }
 `;
 
@@ -178,11 +205,9 @@ out float vWDot;
 
 void main() {
   vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
-  vec3 n = normalize(mat3(modelMatrix) * normal);
   vUv = uv;
 ` + HYPER_LIFT + /* glsl */ `
-  p = mobius_add(p, uHyperPos, n);
-  p = uHyperRot * p;
+  p = uHyperRot * mobius_add_point(p, uHyperPos);
 
   vWDot = dot(p, p);
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
@@ -223,11 +248,20 @@ uniform float uAmbient;
 uniform vec3 uLightDir;
 uniform vec4 uFog;
 uniform float uFogInvDist;
+
+#ifdef USE_GRID
 uniform float uGridScale;
 uniform float uGridWidth;
 uniform float uGridFade;
+in vec3 vLocalPos;
+#endif
+
+#ifdef USE_MOTTLE
 uniform float uMottleScale;
 uniform float uMottleAmount;
+uniform lowp sampler3D uNoise;
+in vec4 vSphere;
+#endif
 
 #ifdef USE_MAP
 uniform sampler2D uMap;
@@ -241,42 +275,36 @@ uniform highp sampler2DShadow uShadowMap;
 uniform float uShadowBias;
 uniform float uShadowStrength;
 uniform float uShadowTexel;
+uniform float uShadowSoft;
 in vec4 vShadowCoord;
 #endif
 
 in vec3 vNormal;
 in vec2 vUv;
 in float vWDot;
-in vec3 vLocalPos;
-in vec4 vSphere;
+in vec4 vTint;
 
 layout(location = 0) out vec4 fragColor;
 
-float hash31(vec3 p) {
-  p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
-  p *= 17.0;
-  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
-}
-
+#ifdef USE_MOTTLE
+// The +0.5 puts lattice points on the texel centres of noise.ts's texture.
 float vnoise(vec3 x) {
   vec3 i = floor(x);
   vec3 f = fract(x);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(mix(hash31(i + vec3(0,0,0)), hash31(i + vec3(1,0,0)), f.x),
-        mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
-    mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
-        mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y), f.z);
+  return texture(uNoise, (i + f + 0.5) * NOISE_TEXEL).r;
 }
 
 float fbm(vec3 p) {
   return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.17) + 0.2 * vnoise(p * 4.61);
 }
+#endif
 
 #ifdef USE_SHADOWMAP
 // 1 = fully lit, 0 = fully occluded. ndl is dot(n, uLightDir), used to scale
 // the bias: grazing surfaces need more slack or they self-shadow into acne.
 float shadowFactor(float ndl) {
+  if (uShadowStrength <= 0.0) return 1.0;
   vec3 sc = vShadowCoord.xyz;
   if (sc.z <= 0.0 || sc.z >= 1.0) return 1.0;
 
@@ -289,13 +317,18 @@ float shadowFactor(float ndl) {
   float bias = uShadowBias * (0.3 + 0.7 * (1.0 - clamp(ndl, 0.0, 1.0)));
   float z = sc.z - bias;
 
-  float lit = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      lit += texture(uShadowMap, vec3(sc.xy + vec2(float(x), float(y)) * uShadowTexel, z));
+  float lit;
+  if (uShadowSoft > 0.5) {
+    lit = 0.0;
+    for (int x = -1; x <= 1; x++) {
+      for (int y = -1; y <= 1; y++) {
+        lit += texture(uShadowMap, vec3(sc.xy + vec2(float(x), float(y)) * uShadowTexel, z));
+      }
     }
+    lit /= 9.0;
+  } else {
+    lit = texture(uShadowMap, vec3(sc.xy, z));
   }
-  lit /= 9.0;
 
   return 1.0 - fade * uShadowStrength * (1.0 - lit);
 }
@@ -308,11 +341,9 @@ void main() {
 
   #ifdef TOP_HEMISPHERE
     if (w_dot < 0.5) discard;
-    gl_FragDepth = 1.0 - 0.5 * gl_FragCoord.z;
   #endif
   #ifdef BOTTOM_HEMISPHERE
     if (w_dot > 2.0) discard;
-    gl_FragDepth = 0.5 * gl_FragCoord.z;
   #endif
 
   // Fog doubles as the depth cue. Spherical space needs its own curve because
@@ -336,9 +367,10 @@ void main() {
     diffuse *= shadowFactor(ndl);
   #endif
 
-  diffuse = uAmbient + (1.0 - uAmbient) * diffuse;
+  float ambient = uAmbient * vTint.a;
+  diffuse = ambient + (1.0 - ambient) * diffuse;
 
-  vec3 base = uColor;
+  vec3 base = uColor * vTint.rgb;
   float alpha = 1.0;
   #ifdef USE_MAP
     // Cutout rather than blending. Sorting transparent surfaces would have to
@@ -372,23 +404,23 @@ void main() {
   // It has to fade with distance. Near the grazing band the ground compresses
   // enormously, fwidth explodes, and an un-faded grid collapses into a smear of
   // aliased mush — which reads as the render being broken when it is not.
-  if (uGridScale > 0.0) {
+  #ifdef USE_GRID
     vec2 g = abs(fract(vLocalPos.xz * uGridScale) - 0.5);
-    vec2 w = fwidth(vLocalPos.xz * uGridScale) * uGridWidth;
-    vec2 line = smoothstep(vec2(0.0), w, g);
-    float fade = 1.0 / (1.0 + w_dot * uGridFade);
-    col *= mix(1.0, 0.55 + 0.45 * min(line.x, line.y), fade);
-  }
+    vec2 gw = fwidth(vLocalPos.xz * uGridScale) * uGridWidth;
+    vec2 line = smoothstep(vec2(0.0), gw, g);
+    float gridFade = 1.0 / (1.0 + w_dot * uGridFade);
+    col *= mix(1.0, 0.55 + 0.45 * min(line.x, line.y), gridFade);
+  #endif
 
   // Seamless surface mottling. Driven by the 3-sphere coordinate, so it is
   // continuous across tile boundaries — no grid direction to kink, nothing to
   // reveal where one tile ends and the next begins.
-  if (uMottleAmount > 0.0) {
+  #ifdef USE_MOTTLE
     vec3 sp = vec3(vSphere.x, vSphere.z, vSphere.w);
     float m = fbm(sp * uMottleScale);
     float coarse = fbm(sp * (uMottleScale * 0.17));
     col *= 1.0 + uMottleAmount * ((m - 0.5) + 0.8 * (coarse - 0.5));
-  }
+  #endif
 
   col = mix(col, uFog.rgb, fog_a);
   fragColor = vec4(col, alpha);

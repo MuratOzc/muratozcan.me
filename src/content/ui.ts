@@ -45,24 +45,20 @@ export const UI = {
   sensitivity: L('Camera sensitivity', 'Kamera hassasiyeti'),
   invertLook: L('Invert vertical look', 'Dikey bakışı ters çevir'),
   headBob: L('Head bob', 'Baş sallanması'),
-  quality: L('Graphics quality', 'Grafik kalitesi'),
-  qualityLow: L('Low', 'Düşük'),
-  qualityMedium: L('Medium', 'Orta'),
-  qualityHigh: L('High', 'Yüksek'),
-  qualityNote: L(
-    'Sets shadow detail. Drop it if the frame rate is uneven.',
-    'Gölgelerin detaylarını belirler. Kare hızı düşükse bunu düşürün.',
+  graphics: L('Graphics', 'Grafikler'),
+  graphicsAuto: L('Auto', 'Otomatik'),
+  graphicsLow: L('Low', 'Düşük'),
+  graphicsMedium: L('Medium', 'Orta'),
+  graphicsHigh: L('High', 'Yüksek'),
+  graphicsAutoNote: L(
+    'Sets resolution, smoothing and shadows by itself to keep movement fluid on this device. Right now: {size}, {shadows}.',
+    'Bu cihazda hareket akıcı kalsın diye çözünürlüğü, kenar yumuşatmayı ve gölgeleri kendi ayarlar. Şu an: {size}, {shadows}.',
   ),
-  antialias: L('Antialiasing', 'Kenar yumuşatma'),
-  antialiasOff: L('Off', 'Kapalı'),
-  antialiasNote: L(
-    'Smooths the jagged edges of distant geometry. Costs more the higher the resolution.',
-    'Uzaktaki nesnelerin tırtıklı kenarlarını yumuşatır. Çözünürlük arttıkça maliyeti artar.',
-  ),
-  resolution: L('Resolution', 'Çözünürlük'),
-  resolutionNote: L(
-    'How many pixels are drawn per screen pixel. Higher is sharper and slower.',
-    'Ekrandaki her piksel için kaç piksel çizileceği. Yüksek olan daha net, daha yavaş.',
+  shadowsOn: L('shadows on', 'gölgeler açık'),
+  shadowsOff: L('shadows off', 'gölgeler kapalı'),
+  graphicsFixedNote: L(
+    'Stays at this level whatever the frame rate does. Auto adjusts itself.',
+    'Kare hızı ne olursa olsun bu seviyede kalır. Otomatik kendini ayarlar.',
   ),
 
   showHelp: L('Show controls', 'Kontrolleri göster'),

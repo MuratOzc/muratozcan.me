@@ -1,15 +1,7 @@
 import { lang, onLangChange, setLang, t, type Lang, type Localized } from '../content/i18n';
 import { UI } from '../content/ui';
-import {
-  ANTIALIAS_OPTIONS,
-  RESOLUTION_MAX,
-  RESOLUTION_MIN,
-  resetSettings,
-  setSetting,
-  settings,
-  type Quality,
-  type Settings,
-} from './settings';
+import { currentQuality, onQualityChange, type Graphics } from '../quality';
+import { onSettingsChange, resetSettings, setSetting, settings, type Settings } from './settings';
 
 /**
  * The settings panel.
@@ -21,12 +13,14 @@ import {
  * bug where one label forgets to update.
  */
 
+type Note = Localized | (() => string);
+
 type Row =
-  | { kind: 'toggle'; label: Localized; note?: Localized; get(): boolean; set(v: boolean): void }
+  | { kind: 'toggle'; label: Localized; note?: Note; get(): boolean; set(v: boolean): void }
   | {
       kind: 'range';
       label: Localized;
-      note?: Localized;
+      note?: Note;
       min: number;
       max: number;
       step: number;
@@ -37,7 +31,7 @@ type Row =
   | {
       kind: 'segmented';
       label: Localized;
-      note?: Localized;
+      note?: Note;
       options: Array<{ value: string; label: Localized }>;
       get(): string;
       set(v: string): void;
@@ -117,38 +111,24 @@ function groups(): Group[] {
       title: UI.groupPerformance,
       rows: [
         {
-          kind: 'range',
-          label: UI.resolution,
-          note: UI.resolutionNote,
-          min: RESOLUTION_MIN,
-          max: RESOLUTION_MAX,
-          step: 0.25,
-          format: (v) => `${v}×`,
-          get: () => settings().resolution,
-          set: (v) => setSetting('resolution', v),
-        },
-        {
           kind: 'segmented',
-          label: UI.antialias,
-          note: UI.antialiasNote,
-          options: ANTIALIAS_OPTIONS.map((n) => ({
-            value: String(n),
-            label: n === 0 ? UI.antialiasOff : { en: `${n}×`, tr: `${n}×` },
-          })),
-          get: () => String(settings().antialias),
-          set: (v) => setSetting('antialias', Number(v)),
-        },
-        {
-          kind: 'segmented',
-          label: UI.quality,
-          note: UI.qualityNote,
+          label: UI.graphics,
+          note: () => {
+            if (settings().graphics !== 'auto') return t(UI.graphicsFixedNote);
+            const view = document.getElementById('view') as HTMLCanvasElement;
+            const shadows = currentQuality().shadowMapSize > 0 ? UI.shadowsOn : UI.shadowsOff;
+            return t(UI.graphicsAutoNote)
+              .replace('{size}', `${view.width}×${view.height}`)
+              .replace('{shadows}', t(shadows));
+          },
           options: [
-            { value: 'low', label: UI.qualityLow },
-            { value: 'medium', label: UI.qualityMedium },
-            { value: 'high', label: UI.qualityHigh },
+            { value: 'auto', label: UI.graphicsAuto },
+            { value: 'low', label: UI.graphicsLow },
+            { value: 'medium', label: UI.graphicsMedium },
+            { value: 'high', label: UI.graphicsHigh },
           ],
-          get: () => settings().quality,
-          set: (v) => setSetting('quality', v as Quality),
+          get: () => settings().graphics,
+          set: (v) => setSetting('graphics', v as Graphics),
         },
       ],
     },
@@ -161,6 +141,8 @@ function groups(): Group[] {
     },
   ];
 }
+
+const liveNotes: Array<() => void> = [];
 
 function renderRow(row: Row): HTMLElement {
   const wrap = document.createElement('div');
@@ -224,10 +206,19 @@ function renderRow(row: Row): HTMLElement {
   }
 
   wrap.append(line);
-  if (row.note) {
+  const source = row.note;
+  if (source) {
     const note = document.createElement('p');
     note.className = 'set-note';
-    note.textContent = t(row.note);
+    if (typeof source === 'function') {
+      const paint = () => {
+        note.textContent = source();
+      };
+      liveNotes.push(paint);
+      paint();
+    } else {
+      note.textContent = t(source);
+    }
     wrap.append(note);
   }
   return wrap;
@@ -252,6 +243,7 @@ export function createSettingsPanel(onVisibilityChange: (open: boolean) => void)
     resetBtn.textContent = t(UI.reset);
     openBtn.setAttribute('aria-label', t(UI.settings));
     body.replaceChildren();
+    liveNotes.length = 0;
     for (const group of groups()) {
       const section = document.createElement('div');
       section.className = 'set-group';
@@ -267,6 +259,13 @@ export function createSettingsPanel(onVisibilityChange: (open: boolean) => void)
   // panel that is currently open and under the visitor's finger.
   onLangChange(build);
   build();
+
+  const repaintNotes = () => {
+    for (const paint of liveNotes) paint();
+  };
+  onQualityChange(repaintNotes);
+  addEventListener('resize', repaintNotes);
+  onSettingsChange(repaintNotes);
 
   let open = false;
   const setOpen = (v: boolean) => {

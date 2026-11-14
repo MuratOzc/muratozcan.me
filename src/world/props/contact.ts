@@ -230,7 +230,7 @@ export function buildContact(
       if (s < 0) glyph.rotateY(Math.PI);
       glyph.translate(0, 0, s * (DISC_T * 0.5 + 0.004));
       mats.push(
-        ...object.addGeometry(
+        ...object.addLiveGeometry(
           world.shared,
           glyph,
           {

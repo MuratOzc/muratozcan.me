@@ -1,7 +1,8 @@
-import { BufferGeometry, Float32BufferAttribute, IcosahedronGeometry } from 'three';
-import { HyperObject, type HyperWorld } from '../../engine';
+import { BufferGeometry, Float32BufferAttribute, IcosahedronGeometry, Vector3 } from 'three';
+import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { merge } from '../geometry';
-import { placeOnGround, toUnits, units } from '../placement';
+import { placeOnGround, placeOnGroundVec, toUnits, units } from '../placement';
+import { rebase } from '../rebase';
 
 /**
  * Ground dressing: tufts of grass and half-buried stones, over the whole lawn.
@@ -123,9 +124,47 @@ function stoneGeometry(radius: number, r: () => number): BufferGeometry {
   return g;
 }
 
+// Icosahedron corners: the nearest is never more than 0.66 rad away, inside
+// the quarter turn rebase needs. A coarser set would break that.
+function regionCentres(): Vector3[] {
+  const corners = new IcosahedronGeometry(1, 0).attributes.position;
+  const out: Vector3[] = [];
+  for (let i = 0; i < corners.count; i++) {
+    const v = new Vector3().fromBufferAttribute(corners, i).normalize();
+    if (!out.some((seen) => seen.distanceToSquared(v) < 1e-6)) out.push(v);
+  }
+  return out;
+}
+
+interface Region {
+  at: GyroVector;
+  object: HyperObject;
+}
+
 export function buildScatter(world: HyperWorld): HyperObject[] {
   const objects: HyperObject[] = [];
   const r = rng(0x5ca77e);
+
+  const centres = regionCentres();
+  const regions = new Map<number, Region>();
+  const here = new Vector3();
+  const regionFor = (bearing: number, dist: number): Region => {
+    here.set(Math.sin(dist) * Math.sin(bearing), Math.cos(dist), -Math.sin(dist) * Math.cos(bearing));
+    let best = 0;
+    for (let i = 1; i < centres.length; i++) {
+      if (centres[i].dot(here) > centres[best].dot(here)) best = i;
+    }
+    let region = regions.get(best);
+    if (!region) {
+      const at = placeOnGroundVec(centres[best]);
+      // tanK height off: rebase hands back geometry that assumes it.
+      region = { at, object: new HyperObject(at, false) };
+      regions.set(best, region);
+      world.add(region.object);
+      objects.push(region.object);
+    }
+    return region;
+  };
 
   // The lawn is a 2-sphere of radius 1/unitScale in authored units.
   const lawnRadius = toUnits(1);
@@ -143,8 +182,10 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
     if (Math.asin(Math.abs(x)) < clear) continue;
     placed++;
 
-    const object = new HyperObject(placeOnGround(bearing, dist));
-    object.rotation.y = r() * Math.PI * 2;
+    const at = placeOnGround(bearing, dist);
+    const yaw = r() * Math.PI * 2;
+    const region = regionFor(bearing, dist);
+    const settle = (g: BufferGeometry) => rebase(g.rotateY(yaw), at, region.at);
 
     const roll = r();
     const tufts = roll < 0.85 ? 2 + Math.floor(r() * 3) : 0;
@@ -155,7 +196,7 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
       for (let i = 0; i < tufts; i++) {
         parts.push(tuftGeometry((r() - 0.5) * 1.1, (r() - 0.5) * 1.1, r));
       }
-      object.addGeometry(world.shared, merge(parts), {
+      region.object.addGeometry(world.shared, settle(merge(parts)), {
         color: GRASS[Math.floor(r() * GRASS.length)],
         ambient: 0.56,
         // Blade-thin shadows are subpixel at any distance you would see them
@@ -172,16 +213,13 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
         g.translate((r() - 0.5) * 1.2, 0, (r() - 0.5) * 1.2);
         parts.push(g);
       }
-      object.addGeometry(world.shared, merge(parts), {
+      region.object.addGeometry(world.shared, settle(merge(parts)), {
         color: STONE[Math.floor(r() * STONE.length)],
         ambient: 0.54,
         mottleScale: 120,
         mottleAmount: 0.2,
       });
     }
-
-    world.add(object);
-    objects.push(object);
   }
 
   return objects;

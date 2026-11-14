@@ -8,31 +8,22 @@
  */
 
 import { isTouch } from '../device';
+import type { Graphics } from '../quality';
 
 export { isTouch };
-
-export type Quality = 'low' | 'medium' | 'high';
 
 export interface Settings {
   fov: number;
   sensitivity: number;
   invertLook: boolean;
   headBob: boolean;
-  quality: Quality;
-  /** Upper bound on devicePixelRatio. Independent of `quality`. */
-  resolution: number;
-  /** MSAA samples for the world pass. 0 is off. */
-  antialias: number;
+  graphics: Graphics;
   showHelp: boolean;
   showDetails: boolean;
   showTests: boolean;
 }
 
-export const RESOLUTION_MIN = 0.5;
-export const RESOLUTION_MAX = 3;
-
-/** WebGL2 guarantees 4 samples; anything past that is not portable. */
-export const ANTIALIAS_OPTIONS = [0, 2, 4];
+const GRAPHICS: Graphics[] = ['auto', 'low', 'medium', 'high'];
 
 export function defaults(): Settings {
   return {
@@ -40,18 +31,7 @@ export function defaults(): Settings {
     sensitivity: 1,
     invertLook: false,
     headBob: true,
-    // The shadow map is the single biggest cost and 4096 alone is ~64 MB of
-    // GPU memory, which is more than some phones will give a tab at all.
-    quality: isTouch ? 'medium' : 'high',
-    // Phones report devicePixelRatio 3 or more, and capping below it is what
-    // made the world look soft — the shadow budget is `quality`'s problem, not
-    // this one's. 2 is the point past which a phone screen stops resolving the
-    // difference and only the fill rate notices.
-    resolution: 2,
-    // Halved on a phone because `resolution` above just gave it ~1.8x the
-    // pixels to fill, and MSAA multiplies whatever that costs. Edges an inch
-    // from your eye at 2x device pixels are already short on room to alias.
-    antialias: isTouch ? 2 : 4,
+    graphics: 'auto',
     showHelp: true,
     // Diagnostics, not content. Anyone who wants them knows where they are.
     showDetails: false,
@@ -75,18 +55,9 @@ function load(): Settings {
         (base[key] as unknown) = v;
       }
     }
-    if (!['low', 'medium', 'high'].includes(base.quality)) base.quality = defaults().quality;
+    if (!GRAPHICS.includes(base.graphics)) base.graphics = defaults().graphics;
     base.fov = Math.max(40, Math.min(100, base.fov));
     base.sensitivity = Math.max(0.2, Math.min(3, base.sensitivity));
-    base.resolution = Math.max(
-      RESOLUTION_MIN,
-      Math.min(RESOLUTION_MAX, base.resolution),
-    );
-    // A count the driver does not offer is not clamped, it is a broken
-    // framebuffer, so only the three the panel can produce are allowed back in.
-    if (!ANTIALIAS_OPTIONS.includes(base.antialias)) {
-      base.antialias = defaults().antialias;
-    }
   } catch {
     // Private browsing, or a corrupt blob. Defaults are always valid.
   }
@@ -127,14 +98,3 @@ export function onSettingsChange(fn: (s: Settings) => void): () => void {
   fn(current);
   return () => listeners.delete(fn);
 }
-
-export interface QualityProfile {
-  shadowMapSize: number;
-  shadows: boolean;
-}
-
-export const QUALITY: Record<Quality, QualityProfile> = {
-  low: { shadowMapSize: 1024, shadows: false },
-  medium: { shadowMapSize: 2048, shadows: true },
-  high: { shadowMapSize: 4096, shadows: true },
-};

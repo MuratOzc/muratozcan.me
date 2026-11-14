@@ -10,6 +10,7 @@ import {
   type Texture,
 } from 'three';
 import { HM } from './math/curvature';
+import { NOISE_SIZE, noiseTexture } from './noise';
 import {
   HYPER_COMMON,
   HYPER_DEPTH_FRAGMENT,
@@ -34,6 +35,7 @@ export interface SharedUniforms {
   uShadowBias: { value: number };
   uShadowStrength: { value: number };
   uShadowTexel: { value: number };
+  uShadowSoft: { value: number };
   uShadowMaxWDot: { value: number };
   /**
    * Compile-time flag, not a uniform: materials built while this is true are
@@ -55,8 +57,25 @@ export function createSharedUniforms(): SharedUniforms {
     uShadowBias: { value: 0.0025 },
     uShadowStrength: { value: 0.9 },
     uShadowTexel: { value: 1 / 2048 },
+    uShadowSoft: { value: 1 },
     uShadowMaxWDot: { value: 1.0 },
     shadowsEnabled: false,
+  };
+}
+
+export interface ObjectUniforms {
+  uHyperPos: { value: Vector3 };
+  uHyperRot: { value: Matrix3 };
+  uStaticPos: { value: Vector3 };
+  uStaticRot: { value: Matrix3 };
+}
+
+export function createObjectUniforms(): ObjectUniforms {
+  return {
+    uHyperPos: { value: new Vector3() },
+    uHyperRot: { value: new Matrix3() },
+    uStaticPos: { value: new Vector3() },
+    uStaticRot: { value: new Matrix3() },
   };
 }
 
@@ -106,15 +125,18 @@ export interface HyperMaterialOptions {
 
 export interface HyperMaterial extends ShaderMaterial {
   isHyperMaterial: true;
+  hemisphere: Hemisphere;
 }
 
 function build(
   shared: SharedUniforms,
+  placement: ObjectUniforms,
   hemisphere: Hemisphere,
   opts: HyperMaterialOptions,
 ): HyperMaterial {
-  // The flag is metadata, not a uniform — strip it before spreading.
-  const { shadowsEnabled, ...sharedUniforms } = shared;
+  const receives = shared.shadowsEnabled && hemisphere !== 'top' && opts.receiveShadow !== false;
+  const mottled = (opts.mottleAmount ?? 0) > 0;
+  const gridded = (opts.gridScale ?? 0) > 0;
 
   const defines: Record<string, string> = {};
   if (hemisphere === 'top') defines.TOP_HEMISPHERE = '1';
@@ -123,35 +145,60 @@ function build(
   if (opts.map && opts.alphaBlend) defines.USE_ALPHA_BLEND = '1';
   // The far hemisphere is beyond the shadow map's reach (and mostly fog), so
   // only near-side materials pay for the sampling.
-  if (shadowsEnabled && hemisphere !== 'top' && opts.receiveShadow !== false) {
-    defines.USE_SHADOWMAP = '1';
+  if (receives) defines.USE_SHADOWMAP = '1';
+  if (gridded) defines.USE_GRID = '1';
+  if (mottled) {
+    defines.USE_MOTTLE = '1';
+    defines.NOISE_TEXEL = (1 / NOISE_SIZE).toFixed(8);
+  }
+
+  const uniforms: ShaderMaterial['uniforms'] = {
+    uK: shared.uK,
+    uUnitScale: shared.uUnitScale,
+    uLightDir: shared.uLightDir,
+    uFog: shared.uFog,
+    uFogInvDist: shared.uFogInvDist,
+    uTanKHeight: { value: opts.tanKHeight === false ? 0 : 1 },
+    uHyperPos: placement.uHyperPos,
+    uHyperRot: placement.uHyperRot,
+    uColor: { value: new Color(opts.color ?? 0xffffff) },
+    uAmbient: { value: opts.ambient ?? 0.55 },
+  };
+  if (receives) {
+    uniforms.uShadowMap = shared.uShadowMap;
+    uniforms.uShadowMatrix = shared.uShadowMatrix;
+    uniforms.uShadowBias = shared.uShadowBias;
+    uniforms.uShadowStrength = shared.uShadowStrength;
+    uniforms.uShadowTexel = shared.uShadowTexel;
+    uniforms.uShadowSoft = shared.uShadowSoft;
+  }
+  if (gridded) {
+    uniforms.uGridScale = { value: opts.gridScale };
+    uniforms.uGridWidth = { value: opts.gridWidth ?? 1.5 };
+    uniforms.uGridFade = { value: opts.gridFade ?? 4.0 };
+  }
+  if (mottled) {
+    uniforms.uMottleScale = { value: opts.mottleScale ?? 40.0 };
+    uniforms.uMottleAmount = { value: opts.mottleAmount };
+    uniforms.uNoise = { value: noiseTexture() };
+    uniforms.uStaticPos = placement.uStaticPos;
+    uniforms.uStaticRot = placement.uStaticRot;
+  }
+  if (opts.map) {
+    uniforms.uMap = { value: opts.map };
+    uniforms.uAlphaTest = { value: opts.alphaTest ?? 0.5 };
   }
 
   const mat = new ShaderMaterial({
     glslVersion: GLSL3,
     defines,
-    uniforms: {
-      ...sharedUniforms,
-      uTanKHeight: { value: opts.tanKHeight === false ? 0 : 1 },
-      uHyperPos: { value: new Vector3() },
-      uHyperRot: { value: new Matrix3() },
-      uColor: { value: new Color(opts.color ?? 0xffffff) },
-      uAmbient: { value: opts.ambient ?? 0.55 },
-      uGridScale: { value: opts.gridScale ?? 0 },
-      uGridWidth: { value: opts.gridWidth ?? 1.5 },
-      uGridFade: { value: opts.gridFade ?? 4.0 },
-      uMottleScale: { value: opts.mottleScale ?? 40.0 },
-      uMottleAmount: { value: opts.mottleAmount ?? 0.0 },
-      uMap: { value: opts.map ?? null },
-      uAlphaTest: { value: opts.alphaTest ?? 0.5 },
-      uStaticPos: { value: new Vector3() },
-      uStaticRot: { value: new Matrix3() },
-    },
+    uniforms,
     vertexShader: HYPER_COMMON + HYPER_VERTEX,
     fragmentShader: HYPER_COMMON + HYPER_FRAGMENT,
   }) as HyperMaterial;
 
   mat.isHyperMaterial = true;
+  mat.hemisphere = hemisphere;
   if (opts.map && opts.alphaBlend) {
     mat.transparent = true;
     // Coplanar paint on the surface below it. Writing depth would only let one
@@ -172,21 +219,22 @@ function build(
  */
 export function createHyperMaterials(
   shared: SharedUniforms,
+  placement: ObjectUniforms,
   opts: HyperMaterialOptions = {},
 ): HyperMaterial[] {
   if (HM.K > 0) {
-    return [build(shared, 'bottom', opts), build(shared, 'top', opts)];
+    return [build(shared, placement, 'bottom', opts), build(shared, placement, 'top', opts)];
   }
-  return [build(shared, 'none', opts)];
+  return [build(shared, placement, 'none', opts)];
 }
 
 /**
  * The depth-only material for the shadow pass: the same curved-space warp,
- * rendered from the light's point of view. One instance per geometry, because
- * uHyperPos/uHyperRot are per-object.
+ * rendered from the light's point of view.
  */
 export function createShadowDepthMaterial(
   shared: SharedUniforms,
+  placement: ObjectUniforms,
   opts: HyperMaterialOptions = {},
 ): HyperMaterial {
   const defines: Record<string, string> = {};
@@ -200,8 +248,8 @@ export function createShadowDepthMaterial(
       uUnitScale: shared.uUnitScale,
       uShadowMaxWDot: shared.uShadowMaxWDot,
       uTanKHeight: { value: opts.tanKHeight === false ? 0 : 1 },
-      uHyperPos: { value: new Vector3() },
-      uHyperRot: { value: new Matrix3() },
+      uHyperPos: placement.uHyperPos,
+      uHyperRot: placement.uHyperRot,
       uMap: { value: opts.map ?? null },
       uAlphaTest: { value: opts.alphaTest ?? 0.5 },
     },
@@ -210,5 +258,6 @@ export function createShadowDepthMaterial(
   }) as HyperMaterial;
 
   mat.isHyperMaterial = true;
+  mat.hemisphere = 'none';
   return mat;
 }

@@ -35,17 +35,19 @@ export { runSelfTests, formatSelfTests } from './math/selftest';
 export type { TestResult } from './math/selftest';
 
 export { HyperWorld } from './HyperWorld';
-export type { HyperWorldOptions } from './HyperWorld';
+export type { HyperWorldOptions, RenderQuality } from './HyperWorld';
 export { HyperObject, SHADOW_LAYER } from './HyperObject';
 export { Controls } from './Controls';
 export {
   createHyperMaterials,
+  createObjectUniforms,
   createShadowDepthMaterial,
   createSharedUniforms,
 } from './HyperMaterial';
 export type {
   HyperMaterial,
   HyperMaterialOptions,
+  ObjectUniforms,
   SharedUniforms,
   Hemisphere,
 } from './HyperMaterial';

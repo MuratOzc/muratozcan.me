@@ -324,7 +324,7 @@ export function buildConveyor(
   // they emit, they are not painted.
   const lampGeo = new CylinderGeometry(0.07, 0.07, 0.09, 14);
   lampGeo.translate(X_TEST, 1.7, 0);
-  const lampMats: HyperMaterial[] = object.addGeometry(world.shared, lampGeo, {
+  const lampMats: HyperMaterial[] = object.addLiveGeometry(world.shared, lampGeo, {
     color: LAMP_IDLE,
     ambient: 1.0,
     castShadow: false,
@@ -333,7 +333,7 @@ export function buildConveyor(
 
   const scanGeo = new RoundedBoxGeometry(0.04, 0.045, 0.62, 3, 0.008);
   scanGeo.translate(X_TEST, 1.4, 0);
-  const scanMats: HyperMaterial[] = object.addGeometry(world.shared, scanGeo, {
+  const scanMats: HyperMaterial[] = object.addLiveGeometry(world.shared, scanGeo, {
     color: LAMP_IDLE,
     ambient: 1.0,
     castShadow: false,
