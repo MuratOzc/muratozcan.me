@@ -242,7 +242,7 @@ async function boot(): Promise<void> {
   buildGround();
 
   // ------------------------------------------------------------------- world
-  // Structure only: the aisle, the arch, and the model at your back. Detail
+  // Structure only: the aisle, the arch, and the portrait far ahead. Detail
   // comes later.
   await stage(UI.loadingStructure, 0.2);
   const skeleton = buildSkeleton(world);

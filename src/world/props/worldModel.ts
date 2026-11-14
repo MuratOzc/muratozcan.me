@@ -14,7 +14,7 @@ import { GyroVector, HM, HyperObject, type HyperWorld } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
 import { STATIONS } from '../../content/stations';
 import { EXHIBIT_LATERAL, SENTRIES } from '../layout';
-import { ARCH_AT, MODEL_AT } from '../skeleton';
+import { ARCH_AT, PORTRAIT_AT } from '../skeleton';
 import { localizedCanvasTexture } from '../text';
 import { easelPole, easelSpots } from './easels';
 import { triangleCorners } from './triangle';
@@ -213,7 +213,7 @@ function archMark(ctx: CanvasRenderingContext2D, g: Vector3): void {
   });
 }
 
-/** The figure on its plinth, at your back the moment you spawn. */
+/** The figure on its plinth, far down the path. */
 function figureMark(ctx: CanvasRenderingContext2D, g: Vector3): void {
   atPoint(ctx, g, (c) => {
     c.fillStyle = '#4f4842';
@@ -383,9 +383,9 @@ function paintMap(ctx: CanvasRenderingContext2D, unitScale: number): void {
     cameraMark(ctx, pathVec(at * unitScale, lateral * unitScale));
   }
 
-  // ---------------- the arch ahead of spawn, and the figure behind it.
+  // ---------------- the arch ahead of spawn, and the figure far beyond it.
   archMark(ctx, pathVec(ARCH_AT * unitScale, 0));
-  figureMark(ctx, pathVec(-MODEL_AT * unitScale, 0));
+  figureMark(ctx, pathVec(PORTRAIT_AT * unitScale, 0));
 
   // ---------------- the numbered exhibits, last, so nothing crosses them.
   for (const s of STATIONS) {
@@ -400,7 +400,7 @@ function paintMap(ctx: CanvasRenderingContext2D, unitScale: number): void {
   // on its own. Kept to single short words: the map has room for text only
   // out near its equator, where the meridians are still far apart.
   const NAMES: Array<[Vector3, Localized, number]> = [
-    [pathVec(-MODEL_AT * unitScale, 0), L('me', 'ben'), -34],
+    [pathVec(PORTRAIT_AT * unitScale, 0), L('me', 'ben'), -34],
     [centroid, L('chess', 'satranç'), 38],
     [easelPole(), L('easels', 'sehpalar'), 74],
   ];

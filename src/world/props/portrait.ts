@@ -15,7 +15,7 @@ import { units, type Poi } from '../placement';
 import { PORTRAIT_ART } from './portraitArt';
 
 /**
- * The figure at your back: a portrait hanging in the air, inside an open frame.
+ * The figure in the sky ahead: a portrait hanging in the air, inside an open frame.
  *
  * The print is ASCII art with nothing behind it — the sky shows through the gaps
  * between the glyphs — and it floats clear of the ground, so the frame has three

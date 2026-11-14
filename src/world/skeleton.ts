@@ -8,18 +8,18 @@ import { buildScatter } from './props/scatter';
 /**
  * The skeleton of the world.
  *
- *        [ you ]  spawn  [ arch: WELCOME ]  ==== the aisle ====>
+ *        spawn  [ arch: WELCOME ]  ==== the aisle ====  [ you ]  ==>
  *            ^                                                 |
  *            +---------------- comes back round ---------------+
  *
  * The aisle is a great circle through spawn, so walking it returns you to
- * where you began — and to the portrait, which stands just behind the start.
+ * where you began.
  *
- * Putting the portrait at spawn rather than at the antipode is what makes the
- * walk work. Distance from it shrinks its apparent size only until a quarter
- * turn; past that it GROWS, and at the halfway point it is directly antipodal
- * and fills the entire sky. You spend the second half of the walk unable to
- * look away from the thing you started with your back to.
+ * The portrait stands on it well past the quarter turn, facing back at spawn.
+ * Distance shrinks a thing's apparent size only until a quarter turn; past
+ * that it GROWS. So from spawn the portrait is already large, hanging in the
+ * sky inside the arch with nothing behind it, and walking toward it makes it
+ * smaller until a quarter turn away, then larger again as you arrive.
  *
  * This file is the MAP, not the furniture: it decides where things stand, and
  * the props under props/ decide what they look like. Add or move a landmark
@@ -28,8 +28,12 @@ import { buildScatter } from './props/scatter';
 
 /** Distance ahead of spawn where the arch stands, in units. */
 export const ARCH_AT = 5.0;
-/** How far behind spawn the portrait stands, in units. */
-export const MODEL_AT = 8.0;
+/**
+ * Distance ahead of spawn where the portrait stands, in units. Chosen by eye:
+ * nearer and it is small and low in the arch, further and it climbs behind the
+ * WELCOME lintel and then off the top of the screen.
+ */
+export const PORTRAIT_AT = 25.0;
 /** Total aisle length: once around. */
 export const AISLE_LENGTH = 2 * Math.PI;
 
@@ -60,12 +64,13 @@ export function buildSkeleton(world: HyperWorld): Skeleton {
   pois.push(arch.poi);
 
   // ----------------------------------------------------------- the portrait
-  const modelAt = -units(MODEL_AT);
+  const portraitAt = units(PORTRAIT_AT);
   const portrait = buildPortrait(
     world,
-    placeAlongPath(modelAt, 0),
-    // Face back down the path, toward the arch and the walk ahead.
-    pathYaw(modelAt, 0) + Math.PI,
+    placeAlongPath(portraitAt, 0),
+    // pathYaw points local -z along the walk, and the print faces +z: back
+    // toward spawn, which is where it is first seen from.
+    pathYaw(portraitAt, 0),
   );
   objects.push(portrait.object);
   pois.push(portrait.poi);
