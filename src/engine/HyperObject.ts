@@ -28,10 +28,112 @@ import {
  */
 export const SHADOW_LAYER = 1;
 
-const indexed = new WeakMap<BufferGeometry, BufferGeometry>();
+const prepared = new WeakMap<BufferGeometry, BufferGeometry>();
 
 /**
- * Index a geometry so shared vertices are transformed once.
+ * Longest triangle edge allowed, in authored units.
+ *
+ * A triangle is flat in the viewer's chart, and a flat thing in curved space
+ * is a chord: it cuts inside the surface it stands for, toward the viewer, by
+ * about the square of its length, and by more the further away it is. A sign
+ * board drawn as one quad bulges two centimetres at five units, straight
+ * through lettering that sits a few millimetres proud of it. At this length
+ * the error stays near a millimetre out to the quarter turn.
+ */
+const MAX_EDGE = 0.3;
+
+/**
+ * Split every edge longer than MAX_EDGE at its midpoint, repeatedly. Null if
+ * nothing needed splitting.
+ *
+ * Bisecting whole edges is what keeps neighbours agreeing: an edge shared by
+ * two triangles is cut at the same point from both sides, so no crack opens.
+ */
+function subdivide(geometry: BufferGeometry): BufferGeometry | null {
+  const position = geometry.attributes.position;
+  const index = geometry.index;
+  const corners = index ? index.count : position.count;
+  const at = (i: number) => (index ? index.getX(i) : i);
+  const limit = MAX_EDGE * MAX_EDGE;
+
+  const d2 = (a: number, b: number) =>
+    (position.getX(a) - position.getX(b)) ** 2 +
+    (position.getY(a) - position.getY(b)) ** 2 +
+    (position.getZ(a) - position.getZ(b)) ** 2;
+  let needed = false;
+  for (let i = 0; i < corners && !needed; i += 3) {
+    const a = at(i);
+    const b = at(i + 1);
+    const c = at(i + 2);
+    needed = d2(a, b) > limit || d2(b, c) > limit || d2(c, a) > limit;
+  }
+  if (!needed) return null;
+
+  // A vertex is its attributes laid end to end: position, then whichever of
+  // normal, uv and colour the geometry has.
+  const layout = (['position', 'normal', 'uv', 'color'] as const)
+    .filter((name) => geometry.attributes[name])
+    .map((name) => ({ name, attribute: geometry.attributes[name], size: geometry.attributes[name].itemSize }));
+  const stride = layout.reduce((n, l) => n + l.size, 0);
+  const normalAt = layout.some((l) => l.name === 'normal') ? 3 : -1;
+
+  const read = (i: number): number[] => {
+    const v: number[] = [];
+    for (const l of layout) for (let c = 0; c < l.size; c++) v.push(l.attribute.getComponent(i, c));
+    return v;
+  };
+  const mid = (a: number[], b: number[]): number[] => {
+    const m = new Array<number>(stride);
+    for (let k = 0; k < stride; k++) m[k] = (a[k] + b[k]) / 2;
+    if (normalAt >= 0) {
+      const length = Math.hypot(m[normalAt], m[normalAt + 1], m[normalAt + 2]) || 1;
+      for (let k = 0; k < 3; k++) m[normalAt + k] /= length;
+    }
+    return m;
+  };
+  const edge = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
+  const out: number[] = [];
+  const split = (a: number[], b: number[], c: number[]): void => {
+    const ab = edge(a, b);
+    const bc = edge(b, c);
+    const ca = edge(c, a);
+    const longest = Math.max(ab, bc, ca);
+    if (longest <= limit) {
+      for (const v of [a, b, c]) for (let k = 0; k < stride; k++) out.push(v[k]);
+    } else if (ab === longest) {
+      const m = mid(a, b);
+      split(a, m, c);
+      split(m, b, c);
+    } else if (bc === longest) {
+      const m = mid(b, c);
+      split(a, b, m);
+      split(a, m, c);
+    } else {
+      const m = mid(c, a);
+      split(a, b, m);
+      split(m, b, c);
+    }
+  };
+  for (let i = 0; i < corners; i += 3) split(read(at(i)), read(at(i + 1)), read(at(i + 2)));
+
+  const result = new BufferGeometry();
+  const count = out.length / stride;
+  let offset = 0;
+  for (const l of layout) {
+    const array = new Float32Array(count * l.size);
+    for (let i = 0; i < count; i++) {
+      for (let c = 0; c < l.size; c++) array[i * l.size + c] = out[i * stride + offset + c];
+    }
+    result.setAttribute(l.name, new BufferAttribute(array, l.size));
+    offset += l.size;
+  }
+  return result;
+}
+
+/**
+ * Make a geometry fit to draw: no edge longer than MAX_EDGE, and indexed, so
+ * shared vertices are transformed once.
  *
  * RoundedBoxGeometry and the extrusions hand back non-indexed buffers — three
  * positions per triangle, nothing reused. That is ordinarily a minor
@@ -44,12 +146,12 @@ const indexed = new WeakMap<BufferGeometry, BufferGeometry>();
  * The tolerance is deliberately far tighter than the 1e-4 default — geometry
  * at this scale has real detail in the fourth decimal.
  */
-function indexGeometry(geometry: BufferGeometry): BufferGeometry {
-  if (geometry.index) return geometry;
-  let g = indexed.get(geometry);
+function prepare(geometry: BufferGeometry): BufferGeometry {
+  let g = prepared.get(geometry);
   if (!g) {
-    g = mergeVertices(geometry, 1e-6);
-    indexed.set(geometry, g);
+    const fine = subdivide(geometry) ?? geometry;
+    g = fine.index ? fine : mergeVertices(fine, 1e-6);
+    prepared.set(geometry, g);
   }
   return g;
 }
@@ -321,7 +423,7 @@ export class HyperObject extends Group {
     this.pending.push({
       // Welded now, not at flush: a caller may go on to move this geometry
       // and add it again, and each call has to keep the shape it was given.
-      geometry: indexGeometry(geometry),
+      geometry: prepare(geometry),
       tint: [tintColor.r, tintColor.g, tintColor.b, full.ambient ?? 0.55],
       opts: full,
       parent: node,
@@ -338,7 +440,7 @@ export class HyperObject extends Group {
     this.shared = shared;
     const full = { tanKHeight: this.useTanKHeight, ...opts };
     this.boundsStale = true;
-    return this.build([{ geometry: indexGeometry(geometry), tint: WHITE }], full, parent ?? this);
+    return this.build([{ geometry: prepare(geometry), tint: WHITE }], full, parent ?? this);
   }
 
   private build(parts: Part[], opts: HyperMaterialOptions, parent: Object3D): HyperMaterial[] {

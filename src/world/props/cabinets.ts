@@ -1,5 +1,5 @@
 import { CylinderGeometry, Group, PlaneGeometry, type BufferGeometry } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { merge } from '../geometry';
 import { makeTextTexture } from '../text';
@@ -104,15 +104,7 @@ export function buildCabinets(
 
   // ---------------- the floor: paved, because seven cabinets on grass is a
   // fly-tip, not an archive.
-  //
-  // TESSELLATION IS LOAD-BEARING HERE. Every quad renders as a flat chord of
-  // the true curved surface, so a coarse slab bulges upward mid-quad by
-  // R(1 - cos(θ/2)). At 2 segments across 3 units that sag is 0.028 authored
-  // units — MORE than the paperwork's clearance above the floor, so the floor
-  // swallowed the sheets wherever they sat away from a vertex. At 10 segments
-  // it is 0.0011, comfortably under. Anything laid on a surface in this world
-  // has to clear that surface's chord error, not just its face.
-  const floor = new RoundedBoxGeometry(3.0, 0.1, 2.9, 10, 0.02);
+  const floor = new RoundedBoxGeometry(3.0, 0.1, 2.9, 2, 0.02);
   floor.translate(0, 0.05, 0);
   object.addGeometry(world.shared, floor, { color: 0xb0aea6, ambient: 0.62 });
 
@@ -229,8 +221,7 @@ export function buildCabinets(
   // millimetres over the floor is exactly the case the shadow map cannot
   // resolve, and it comes back as a dark blot.
   // Rest the paperwork a hair above the paving rather than exactly on it:
-  // coplanar faces fight for depth, and the lift also buys margin over the
-  // floor's remaining chord error (see the tessellation note above).
+  // coplanar faces fight for depth.
   const FLOOR_TOP = 0.1 + 0.006;
   const sheets: BufferGeometry[] = [];
   const folders: BufferGeometry[] = [];

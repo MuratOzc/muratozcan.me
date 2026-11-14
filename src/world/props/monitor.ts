@@ -9,7 +9,7 @@ import {
   WebGLRenderTarget,
   type BufferGeometry,
 } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import {
   HyperObject,
   type GyroVector,
@@ -124,7 +124,7 @@ export function buildMonitor(
   // true curved surface and bulges up mid-quad, so a 0.07-tall base standing on
   // it gets eaten from below. Everything with a footprint in this world stands
   // on a slab for that reason.
-  const pad = new RoundedBoxGeometry(1.7, PAD_TOP, 1.3, 8, 0.02);
+  const pad = new RoundedBoxGeometry(1.7, PAD_TOP, 1.3, 2, 0.02);
   pad.translate(0, PAD_TOP / 2, POST_Z);
   object.addGeometry(world.shared, pad, { color: 0xb0aea6, ambient: 0.62 });
 
@@ -141,11 +141,7 @@ export function buildMonitor(
   // ---------------- the panel: a slim body, a bezel FRAME, and the screen.
   //
   // The bezel is four bars around the screen rather than a slab behind it,
-  // and the body sits 0.02 back. That is deliberate: a coarse slab directly
-  // behind a fine plane bulges through it mid-quad (each quad renders as a
-  // chord of the true curved surface), which showed up as a black disc in the
-  // middle of the screen. Nothing coarse is allowed behind a decal here — the
-  // same rule the chalkboard needed.
+  // and the body sits 0.02 back.
   //
   // All panel parts are authored in panel-local coordinates, then tilted as
   // one rigid body and lifted to the mount, so the tilt cannot shear the

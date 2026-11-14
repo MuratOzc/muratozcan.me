@@ -12,7 +12,7 @@ import {
   type Texture,
 } from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { L, t, upper, type Localized } from '../../content/i18n';
 import { merge } from '../geometry';
@@ -963,12 +963,15 @@ export function buildChessTable(
     object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.5 }, boardNode);
   }
 
-  // Two single-sided planes back to back, never a slab: under the Möbius warp
-  // a coarse backing rasterises as a chord that bows through the face in front
-  // of it. Opposite-facing planes cannot fight.
+  // The panel, and the score as a face on the side toward the table.
+  const PANEL_T = 0.026;
+  const backing = new RoundedBoxGeometry(PANEL_W - F, PANEL_H - F, PANEL_T, 2, 0.004);
+  backing.translate(0, PANEL_CY, 0);
+  object.addGeometry(world.shared, backing, { color: 0x6b6357, ambient: 0.5 }, boardNode);
+
   const placard = new PlaneGeometry(PANEL_W - F, PANEL_H - F, 6, 4);
   placard.rotateY(Math.PI);
-  placard.translate(0, PANEL_CY, -0.013);
+  placard.translate(0, PANEL_CY, -(PANEL_T / 2 + 0.004));
   object.addGeometry(
     world.shared,
     placard,
@@ -976,17 +979,9 @@ export function buildChessTable(
       map: scoreboardTexture(),
       color: 0xffffff,
       ambient: 0.9,
+      castShadow: false,
       receiveShadow: false,
     },
-    boardNode,
-  );
-
-  const backing = new PlaneGeometry(PANEL_W - F, PANEL_H - F, 6, 4);
-  backing.translate(0, PANEL_CY, 0.013);
-  object.addGeometry(
-    world.shared,
-    backing,
-    { color: 0x6b6357, ambient: 0.5, receiveShadow: false },
     boardNode,
   );
 

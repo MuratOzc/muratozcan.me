@@ -1,5 +1,5 @@
 import { CylinderGeometry, Group, PlaneGeometry } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { localizedCanvasTexture } from '../text';
 
@@ -193,20 +193,14 @@ export function buildSchoolDesk(
     object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.5 }, boardNode);
   }
 
-  // The board is TWO single-sided planes, back to back: chalk facing the
-  // path, panelling facing away, edges hidden inside the frame. Never a
-  // solid slab behind the chalk: under the Möbius warp a coarse slab face
-  // rasterises as a chord that bows THROUGH a finer plane millimetres in
-  // front of it — a dark blot in the middle of the board that grows with
-  // viewing distance. Opposite-facing planes cannot fight; whichever side
-  // you are on, the other is backface-culled.
-  // Both planes DO cast (castShadow defaults on): the depth twins live on the
-  // shadow layer, invisible to the main camera, so they cannot re-create the
-  // poke-through — but without them the board would throw a hollow, frame-
-  // only shadow on the grass. Whichever plane faces the light rasterises
-  // into the map; the other is backface-culled there, harmlessly.
+  // The board, and the chalk as a face a few millimetres proud of it.
+  const SLATE_T = 0.024;
+  const slate = new RoundedBoxGeometry(BOARD_W - F, BOARD_H - F, SLATE_T, 2, 0.004);
+  slate.translate(0, BOARD_CY, 0);
+  object.addGeometry(world.shared, slate, { color: 0x6b6357, ambient: 0.5 }, boardNode);
+
   const chalkFace = new PlaneGeometry(BOARD_W - F, BOARD_H - F, 8, 5);
-  chalkFace.translate(0, BOARD_CY, 0.012);
+  chalkFace.translate(0, BOARD_CY, SLATE_T / 2 + 0.004);
   object.addGeometry(
     world.shared,
     chalkFace,
@@ -214,18 +208,9 @@ export function buildSchoolDesk(
       map: chalkboardTexture(),
       color: 0xffffff,
       ambient: 0.92,
+      castShadow: false,
       receiveShadow: false,
     },
-    boardNode,
-  );
-
-  const backPanel = new PlaneGeometry(BOARD_W - F, BOARD_H - F, 8, 5);
-  backPanel.rotateY(Math.PI);
-  backPanel.translate(0, BOARD_CY, -0.012);
-  object.addGeometry(
-    world.shared,
-    backPanel,
-    { color: 0x6b6357, ambient: 0.5, receiveShadow: false },
     boardNode,
   );
 

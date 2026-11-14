@@ -9,7 +9,7 @@ import {
   Vector3,
   type Texture,
 } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { GyroVector, HM, HyperObject, type HyperWorld } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
 import { STATIONS } from '../../content/stations';

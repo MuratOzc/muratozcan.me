@@ -9,7 +9,7 @@ import {
   TorusGeometry,
   type BufferGeometry,
 } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { merge } from '../geometry';
 

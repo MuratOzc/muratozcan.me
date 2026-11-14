@@ -1,5 +1,5 @@
 import { PlaneGeometry } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type HyperWorld } from '../../engine';
 import type { Station } from '../../content/stations';
 import { merge } from '../geometry';

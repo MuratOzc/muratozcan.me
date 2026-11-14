@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, Group } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { merge } from '../geometry';
 
@@ -286,12 +286,7 @@ export function buildGears(world: HyperWorld, at: GyroVector, yaw: number): Gear
 
   // ---------------- the case: paving, a plinth, a dark backing plate, and a
   // brass frame deep enough to box all three gear layers in.
-  //
-  // The plate is tessellated at 8 segments rather than 2 for the reason the
-  // cabinet floor is: every quad renders as a flat chord of the true curved
-  // surface, and a coarse plate bulges forward mid-quad far enough to swallow
-  // the 0.02 clearance in front of it.
-  const pad = new RoundedBoxGeometry(3.6, 0.1, 1.5, 8, 0.02);
+  const pad = new RoundedBoxGeometry(3.6, 0.1, 1.5, 2, 0.02);
   pad.translate(0, 0.05, 0.1);
   object.addGeometry(world.shared, pad, { color: 0xb0aea6, ambient: 0.62 });
 

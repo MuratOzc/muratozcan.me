@@ -7,7 +7,7 @@ import {
   SRGBColorSpace,
   type Texture,
 } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { RoundedBoxGeometry } from '../geometry';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
 import { L } from '../../content/i18n';
 import { merge } from '../geometry';
