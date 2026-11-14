@@ -76,11 +76,20 @@ const world = new HyperWorld({
   curvature: 1,
   unitScale: UNIT_SCALE,
   background: 0xaebfd0,
-  fogColor: [0.70, 0.78, 0.88],
-  fogDensity: 0.9,
   fov: settings().fov,
 });
-world.setLightDirection(new Vector3(0.35, 0.9, 0.25));
+world.setAtmosphere({
+  sunDirection: [-0.72, 0.93, 0.3],
+  sun: [2.05, 1.86, 1.5],
+  skyLight: [0.7, 0.84, 1.04],
+  groundLight: [0.74, 0.72, 0.58],
+  horizon: [0.74, 0.85, 0.95],
+  zenith: [0.3, 0.54, 0.86],
+  sunGlow: [1.0, 0.86, 0.62],
+  fogDensity: 0.9,
+  haze: 0.3,
+  vignette: 0.28,
+});
 onQualityChange((quality) => world.setQuality(quality));
 
 const pois: Poi[] = [];
@@ -212,10 +221,11 @@ function buildGround(): void {
       tile.rotation.y = yaw;
       tile.backdrop = true;
       tile.addGeometry(world.shared, chunk, {
-        color: 0x8ab967,
+        color: 0x9cb47c,
         ambient: 0.62,
         mottleScale: 34,
         mottleAmount: 0.3,
+        mottleHue: 0.7,
         castShadow: false,
       });
       world.add(tile);

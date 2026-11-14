@@ -99,7 +99,10 @@ function batchKey(parent: Object3D, opts: HyperMaterialOptions): string {
     opts.gridScale ?? 0,
     opts.gridWidth ?? '',
     opts.gridFade ?? '',
-    (opts.mottleAmount ?? 0) > 0 ? `${opts.mottleScale ?? ''}/${opts.mottleAmount}` : '',
+    opts.sway ?? 0,
+    (opts.mottleAmount ?? 0) > 0
+      ? `${opts.mottleScale ?? ''}/${opts.mottleAmount}/${opts.mottleHue ?? 0}`
+      : '',
   ].join('|');
 }
 
@@ -164,6 +167,12 @@ function mergeParts(parts: Part[]): BufferGeometry {
     copyAttribute(g.attributes.normal as BufferAttribute, normal, v, count, 3);
     copyAttribute(g.attributes.uv as BufferAttribute | undefined, uv, v, count, 2);
     for (let k = 0; k < count; k++) tint.set(part.tint, (v + k) * 4);
+    const shade = g.attributes.color;
+    if (shade) {
+      for (let k = 0; k < count; k++) {
+        for (let c = 0; c < 3; c++) tint[(v + k) * 4 + c] *= shade.getComponent(k, c);
+      }
+    }
 
     const src = g.index!;
     for (let k = 0; k < src.count; k++) index[i++] = src.getX(k) + v;
@@ -252,7 +261,6 @@ export class HyperObject extends Group {
   viewFar = Math.PI;
   /** 2 when the bounding ball surrounds the viewer and so covers every direction. */
   viewSine = 2;
-  shadowSine = 2;
   inView = true;
 
   private shared: SharedUniforms | null = null;
@@ -265,6 +273,7 @@ export class HyperObject extends Group {
   private depth: Mesh[] = [];
   private hasMovingParts = false;
   private boundsStale = false;
+  private sway = 0;
 
   private boundCenter = new Vector3();
   private boundRadius = Math.PI;
@@ -336,6 +345,7 @@ export class HyperObject extends Group {
     const shared = this.shared!;
     const geometry = mergeParts(parts);
     if (parent !== this) this.hasMovingParts = true;
+    this.sway = Math.max(this.sway, opts.sway ?? 0);
 
     const mats = createHyperMaterials(shared, this.placement, opts);
     const meshes = mats.map((mat) => {
@@ -408,8 +418,10 @@ export class HyperObject extends Group {
     const points = new Float32Array(total * 4);
     const min = [Infinity, Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity, -Infinity];
+    // The vertex shader moves swaying geometry after these bounds are taken.
+    const slack = 2 * this.sway * HM.unitScale;
     const pad = (radius: number) =>
-      this.hasMovingParts ? radius * MOVING_PARTS_PAD + 0.01 : radius;
+      (this.hasMovingParts ? radius * MOVING_PARTS_PAD + 0.01 : radius) + slack;
     const centre = [0, 0, 0, 0];
     let n = 0;
     for (const batch of this.batches) {
@@ -437,7 +449,7 @@ export class HyperObject extends Group {
     this.boundRadius = pad(angularReach(points, 0, n, centre));
   }
 
-  place(worldGV: GyroVector, shadowReach: number): void {
+  place(worldGV: GyroVector): void {
     if (this.pending.length > 0 || this.boundsStale) this.flush();
     this.localGV.composeInto(worldGV, this.composed);
     this.placementStale = true;
@@ -445,7 +457,7 @@ export class HyperObject extends Group {
     if (HM.K <= 0) {
       this.viewNear = 0;
       this.viewFar = Math.PI;
-      this.viewSine = this.shadowSine = 2;
+      this.viewSine = 2;
       return;
     }
 
@@ -458,7 +470,6 @@ export class HyperObject extends Group {
     if (r > 1e-9) this.viewDir.copy(scratch).divideScalar(r);
 
     this.viewSine = subtendedSine(distance, radius);
-    this.shadowSine = subtendedSine(distance, radius * shadowReach + 0.05);
   }
 
   syncMatrices(): void {

@@ -46,8 +46,38 @@
  */
 
 export const HYPER_COMMON = /* glsl */ `
-uniform float uK;
-uniform float uUnitScale;
+// A block, not plain uniforms: three re-sends plain ones on every draw call.
+// The layout has to match createSharedUniforms member for member.
+layout(std140) uniform World {
+  mat4 uShadowMatrix;
+  vec4 wSpace;
+  vec4 wLight;
+  vec4 wSun;
+  vec4 wSky;
+  vec4 wGround;
+  vec4 wHorizon;
+  vec4 wZenith;
+  vec4 wGlow;
+};
+#define uK wSpace.x
+#define uUnitScale wSpace.y
+#define uTime wSpace.z
+#define uFogInvDist wSpace.w
+#define uLightDir wLight.xyz
+#define uFogDensity wLight.w
+#define uSunColor wSun.rgb
+#define uHaze wSun.w
+#define uSkyLight wSky.rgb
+#define uShadowBias wSky.w
+#define uGroundLight wGround.rgb
+#define uShadowStrength wGround.w
+#define uFogHorizon wHorizon.rgb
+#define uShadowTexel wHorizon.w
+#define uFogZenith wZenith.rgb
+#define uShadowSoft wZenith.w
+#define uSunGlow wGlow.rgb
+#define uShadowMaxWDot wGlow.w
+
 uniform float uTanKHeight;
 
 float tan_k(float x) {
@@ -113,7 +143,6 @@ out vec4 vSphere;
 #endif
 
 #ifdef USE_SHADOWMAP
-uniform mat4 uShadowMatrix;
 out vec4 vShadowCoord;
 #endif
 
@@ -125,12 +154,24 @@ out vec3 vNormal;
 out vec2 vUv;
 out float vWDot;
 out vec4 vTint;
+out vec4 vView;
+
+#ifdef USE_SWAY
+uniform float uSway;
+#endif
 
 void main() {
   vec3 p = (modelMatrix * vec4(position, 1.0)).xyz;
   vec3 n = normalize(mat3(modelMatrix) * normal);
   vUv = uv;
   vTint = aTint;
+  #ifdef USE_SWAY
+    float bend = uSway * uv.y * uv.y;
+    p.x += bend * sin(uTime * 1.7 + p.x * 3.1 + p.z * 2.3);
+    p.z += bend * 0.6 * cos(uTime * 1.3 + p.x * 2.7 - p.z * 1.9);
+  #endif
+  // Height above the ground; has to be read before the lift.
+  vView.w = p.y;
   #ifdef USE_GRID
     vLocalPos = position;
   #endif
@@ -178,6 +219,7 @@ void main() {
   if (uK < -0.5) { w = 1.0 + w_dot; }
 
   vNormal = n;
+  vView.xyz = p;
 
   // The camera never translates — the world moves instead — so strip any
   // translation from the view matrix and keep only its rotation.
@@ -215,8 +257,6 @@ void main() {
 `;
 
 export const HYPER_DEPTH_FRAGMENT = /* glsl */ `
-uniform float uShadowMaxWDot;
-
 #ifdef USE_MAP
 uniform sampler2D uMap;
 uniform float uAlphaTest;
@@ -245,9 +285,6 @@ void main() {
 export const HYPER_FRAGMENT = /* glsl */ `
 uniform vec3 uColor;
 uniform float uAmbient;
-uniform vec3 uLightDir;
-uniform vec4 uFog;
-uniform float uFogInvDist;
 
 #ifdef USE_GRID
 uniform float uGridScale;
@@ -259,6 +296,7 @@ in vec3 vLocalPos;
 #ifdef USE_MOTTLE
 uniform float uMottleScale;
 uniform float uMottleAmount;
+uniform float uMottleHue;
 uniform lowp sampler3D uNoise;
 in vec4 vSphere;
 #endif
@@ -272,10 +310,6 @@ uniform float uAlphaTest;
 // A comparison sampler: texture() returns how much of the bilinear footprint
 // passes the depth test, so each tap is already softened in hardware.
 uniform highp sampler2DShadow uShadowMap;
-uniform float uShadowBias;
-uniform float uShadowStrength;
-uniform float uShadowTexel;
-uniform float uShadowSoft;
 in vec4 vShadowCoord;
 #endif
 
@@ -283,8 +317,19 @@ in vec3 vNormal;
 in vec2 vUv;
 in float vWDot;
 in vec4 vTint;
+in vec4 vView;
 
 layout(location = 0) out vec4 fragColor;
+
+vec3 shoulder(vec3 c) {
+  const float knee = 0.72;
+  vec3 over = max(c - knee, 0.0) / (1.0 - knee);
+  return min(c, knee) + (1.0 - knee) * over / (1.0 + over);
+}
+
+float grain(vec2 p) {
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
 
 #ifdef USE_MOTTLE
 // The +0.5 puts lattice points on the texel centres of noise.ts's texture.
@@ -350,25 +395,34 @@ void main() {
   // w_dot is not monotonic in distance the way it is when K <= 0.
   float fog_a;
   if (uK > 0.5) {
-    fog_a = uFog.a * w_dot / (2.0 + uK * w_dot);
+    fog_a = uFogDensity * w_dot / (2.0 + uK * w_dot);
     fog_a *= fog_a;
     fog_a *= fog_a;
+    // w/(1+w) is sin^2 of half the geodesic distance.
+    fog_a = 1.0 - (1.0 - fog_a) * exp(-uHaze * w_dot / (1.0 + w_dot));
   } else {
-    fog_a = uFog.a * (1.0 - max(1.0 - uFogInvDist * w_dot, 0.0));
+    fog_a = uFogDensity * (1.0 - max(1.0 - uFogInvDist * w_dot, 0.0));
   }
 
   vec3 n = normalize(vNormal);
+  vec3 view = normalize(vView.xyz);
   float ndl = dot(n, uLightDir);
-  float diffuse = clamp(0.5 + 0.5 * ndl, 0.0, 1.0);
+  float direct = clamp((ndl + 0.25) / 1.25, 0.0, 1.0);
 
   // Shadow scales the DIRECT light only; the ambient floor below is what a
   // fully shadowed surface is left with.
   #ifdef USE_SHADOWMAP
-    diffuse *= shadowFactor(ndl);
+    direct *= shadowFactor(ndl);
   #endif
 
+  // At ambient 1 a surface is a lamp or a screen and takes no light at all.
   float ambient = uAmbient * vTint.a;
-  diffuse = ambient + (1.0 - ambient) * diffuse;
+  float unlit = smoothstep(0.85, 1.0, ambient);
+  float open = mix(0.6, 1.0, smoothstep(0.0, 0.7, vView.w));
+  open = mix(open, 1.0, clamp(n.y, 0.0, 1.0));
+  vec3 light = ambient * open * mix(uGroundLight, uSkyLight, 0.5 + 0.5 * n.y)
+             + (1.0 - ambient) * direct * uSunColor;
+  light = mix(light, vec3(1.0), unlit);
 
   vec3 base = uColor * vTint.rgb;
   float alpha = 1.0;
@@ -396,7 +450,11 @@ void main() {
     base *= tex.rgb;
   #endif
 
-  vec3 col = base * diffuse;
+  vec3 col = base * light;
+  float rim = 1.0 - abs(dot(n, view));
+  rim *= rim;
+  rim *= rim;
+  col += base * uSkyLight * (0.35 * rim * (1.0 - unlit));
 
   // Optional surface grid, in authored Unit coordinates so the lines follow the
   // geometry rather than the screen.
@@ -419,10 +477,24 @@ void main() {
     vec3 sp = vec3(vSphere.x, vSphere.z, vSphere.w);
     float m = fbm(sp * uMottleScale);
     float coarse = fbm(sp * (uMottleScale * 0.17));
-    col *= 1.0 + uMottleAmount * ((m - 0.5) + 0.8 * (coarse - 0.5));
+    float fine = vnoise(sp * (uMottleScale * 11.3));
+    col *= 1.0 + uMottleAmount * (0.55 * (m - 0.5) + 0.7 * (coarse - 0.5) + 0.6 * (fine - 0.5));
+    vec3 drift = mix(vec3(0.88, 1.0, 1.1), vec3(1.16, 1.04, 0.8), smoothstep(0.32, 0.68, coarse));
+    col *= mix(vec3(1.0), drift, uMottleHue);
   #endif
 
-  col = mix(col, uFog.rgb, fog_a);
+  float sunward = max(dot(view, uLightDir), 0.0);
+  float glow = sunward * sunward;
+  glow *= glow;
+  glow *= glow;
+  vec3 air = mix(uFogHorizon, uFogZenith, pow(clamp(view.y, 0.0, 1.0), 0.75));
+  // Only ever a broad glow. The light is fixed to the viewer, not the world,
+  // and a disc in the sky makes it plain that the sun walks with you.
+  air += uSunGlow * (0.3 * glow);
+
+  col = mix(shoulder(col), air, fog_a);
+  // Half a code value of noise, or the sky's gradients band in eight bits.
+  col += (grain(gl_FragCoord.xy) - 0.5) / 255.0;
   fragColor = vec4(col, alpha);
 }
 `;

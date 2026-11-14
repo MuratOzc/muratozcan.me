@@ -19,7 +19,7 @@ import { rebase } from '../rebase';
  */
 
 /** Clumps per square authored unit of lawn. The only thing to tune. */
-const DENSITY = 0.05;
+const DENSITY = 0.24;
 
 /** Half-width of the corridor kept clear for the path, in units. */
 const PATH_CLEAR = 1.15;
@@ -31,7 +31,7 @@ const PATH_CLEAR = 1.15;
  * SATURATION — a much lower blue channel relative to green — and only slightly
  * by brightness. Going dark instead reads as burnt patches rather than grass.
  */
-const GRASS = [0x649239, 0x71a044, 0x5b8a3c];
+const GRASS = [0x7fa552, 0x8cae58, 0x78a058];
 const STONE = [0x9d9a92, 0x8e8b84, 0xa8a49a];
 
 function rng(seed: number): () => number {
@@ -55,6 +55,8 @@ function bladeGeometry(h: number, bend: number, w0: number, azimuth: number): Bu
   const sa = Math.sin(azimuth);
   const pos: number[] = [];
   const uv: number[] = [];
+  const shade: number[] = [];
+  const tone = (t: number) => [0.62 + 0.78 * t, 0.7 + 0.62 * t, 0.72 + 0.1 * t];
 
   const edge = (t: number, side: number): [number, number, number] => {
     const bx = bend * t * t;
@@ -72,11 +74,13 @@ function bladeGeometry(h: number, bend: number, w0: number, azimuth: number): Bu
     const d = edge(t1, -1);
     pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     uv.push(0, t0, 1, t0, 1, t1, 0, t0, 1, t1, 0, t1);
+    shade.push(...tone(t0), ...tone(t0), ...tone(t1), ...tone(t0), ...tone(t1), ...tone(t1));
   }
 
   const g = new BufferGeometry();
   g.setAttribute('position', new Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new Float32BufferAttribute(shade, 3));
   const n = new Float32Array(pos.length);
   for (let i = 1; i < n.length; i += 3) n[i] = 1;
   g.setAttribute('normal', new Float32BufferAttribute(n, 3));
@@ -188,8 +192,8 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
     const settle = (g: BufferGeometry) => rebase(g.rotateY(yaw), at, region.at);
 
     const roll = r();
-    const tufts = roll < 0.85 ? 2 + Math.floor(r() * 3) : 0;
-    const stones = roll < 0.6 ? 0 : 1 + Math.floor(r() * 3);
+    const tufts = roll < 0.94 ? 2 + Math.floor(r() * 3) : 0;
+    const stones = roll < 0.86 ? 0 : 1 + Math.floor(r() * 3);
 
     if (tufts > 0) {
       const parts: BufferGeometry[] = [];
@@ -202,6 +206,7 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
         // Blade-thin shadows are subpixel at any distance you would see them
         // from, and the depth map cannot resolve them without acne.
         castShadow: false,
+        sway: 0.035,
       });
     }
 

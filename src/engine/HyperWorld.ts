@@ -16,7 +16,6 @@ import {
   UnsignedIntType,
   Vector2,
   Vector3,
-  Vector4,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
@@ -29,8 +28,6 @@ export interface HyperWorldOptions {
   canvas: HTMLCanvasElement;
   curvature?: Curvature;
   unitScale?: number;
-  fogColor?: [number, number, number];
-  fogDensity?: number;
   fogInvDist?: number;
   background?: number;
   fov?: number;
@@ -40,6 +37,22 @@ export interface HyperWorldOptions {
   shadowStrength?: number;
   /** Depth-compare bias, in normalized light-space depth. Raise if acne. */
   shadowBias?: number;
+}
+
+type RGB = [number, number, number];
+
+/** Colours are multipliers in the space the shader writes to the screen, not sRGB hex. */
+export interface Atmosphere {
+  sunDirection: RGB;
+  sun: RGB;
+  skyLight: RGB;
+  groundLight: RGB;
+  horizon: RGB;
+  zenith: RGB;
+  sunGlow: RGB;
+  fogDensity: number;
+  haze: number;
+  vignette: number;
 }
 
 export interface RenderQuality {
@@ -128,7 +141,8 @@ export class HyperWorld {
   private lightCamera: OrthographicCamera | null = null;
   private shadowStrength = 0.9;
   private shadowBias = 0.0013;
-  private shadowReach = 3;
+  private shadowThrow = new Vector3();
+  private frustum = { t: 1, at: 1, cap: 1, side: 1 };
   private shadowsActive = true;
   private pixel = new Uint8Array(4);
   /**
@@ -189,7 +203,7 @@ export class HyperWorld {
 
     this.blitMaterial = new ShaderMaterial({
       glslVersion: GLSL3,
-      uniforms: { uView: { value: this.viewTarget.texture } },
+      uniforms: { uView: { value: this.viewTarget.texture }, uVignette: { value: 0 } },
       depthTest: false,
       depthWrite: false,
       vertexShader: /* glsl */ `
@@ -201,9 +215,14 @@ export class HyperWorld {
       `,
       fragmentShader: /* glsl */ `
         uniform sampler2D uView;
+        uniform float uVignette;
         in vec2 vUv;
         layout(location = 0) out vec4 fragColor;
-        void main() { fragColor = texture(uView, vUv); }
+        void main() {
+          vec2 q = vUv - 0.5;
+          float edge = smoothstep(0.12, 0.62, dot(q, q));
+          fragColor = vec4(texture(uView, vUv).rgb * (1.0 - uVignette * edge), 1.0);
+        }
       `,
     });
     const quad = new Mesh(new PlaneGeometry(2, 2), this.blitMaterial);
@@ -211,8 +230,6 @@ export class HyperWorld {
     this.blitScene.add(quad);
 
     this.shared = createSharedUniforms();
-    const fc = opts.fogColor ?? [0.72, 0.79, 0.86];
-    this.shared.uFog.value = new Vector4(fc[0], fc[1], fc[2], opts.fogDensity ?? 1.0);
     this.shared.uFogInvDist.value = opts.fogInvDist ?? 1.0;
 
     if (opts.shadows !== false) {
@@ -242,12 +259,26 @@ export class HyperWorld {
     obj.dispose();
   }
 
+  setAtmosphere(a: Atmosphere): void {
+    const s = this.shared;
+    s.uSunColor.value.fromArray(a.sun);
+    s.uSkyLight.value.fromArray(a.skyLight);
+    s.uGroundLight.value.fromArray(a.groundLight);
+    s.uFogHorizon.value.fromArray(a.horizon);
+    s.uFogZenith.value.fromArray(a.zenith);
+    s.uSunGlow.value.fromArray(a.sunGlow);
+    s.uFogDensity.value = a.fogDensity;
+    s.uHaze.value = a.haze;
+    this.blitMaterial.uniforms.uVignette.value = a.vignette;
+    this.setLightDirection(scratchDir.fromArray(a.sunDirection));
+  }
+
   setLightDirection(dir: Vector3): void {
     const light = this.shared.uLightDir.value.copy(dir).normalize();
-    // How far past its bounding ball an object's shadow can fall. Too small
-    // and shadows of things just off screen vanish at the screen's edge.
-    const zenith = Math.acos(Math.max(-1, Math.min(1, light.y))) + 0.1;
-    this.shadowReach = zenith < 1.4 ? 1 + 2.6 * Math.tan(zenith) : Infinity;
+    // Per unit of caster radius, with 1.3 of slack. Too short and the shadows
+    // of things just off screen vanish at its edge.
+    const reach = light.y > 0.05 ? 2.6 / light.y : 1e3;
+    this.shadowThrow.set(-light.x * reach, 0, -light.z * reach);
   }
 
   setFov(deg: number): void {
@@ -336,29 +367,48 @@ export class HyperWorld {
   }
 
   private cull(camera: PerspectiveCamera, main: boolean): void {
-    const t = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom;
-    const at = t * camera.aspect;
-    const sideLength = Math.hypot(1, at);
-    const capLength = Math.hypot(1, t);
-    const toCamera = scratchQuat.copy(camera.quaternion).invert();
+    const f = this.frustum;
+    f.t = Math.tan((camera.fov * Math.PI) / 360) / camera.zoom;
+    f.at = f.t * camera.aspect;
+    f.side = Math.hypot(1, f.at);
+    f.cap = Math.hypot(1, f.t);
+    scratchQuat.copy(camera.quaternion).invert();
 
     for (const obj of this.objects) {
-      let inside = 1;
-      if (obj.viewSine <= 1) {
-        const d = scratchDir.copy(obj.viewDir).applyQuaternion(toCamera);
-        inside = Math.min(
-          (-at * d.z - Math.abs(d.x)) / sideLength,
-          (-t * d.z - Math.abs(d.y)) / capLength,
-        );
-      }
-      const inFrustum = inside > -(obj.viewSine + 0.02);
+      const inFrustum =
+        obj.viewSine > 1 || this.inside(scratchDir.copy(obj.viewDir)) > -(obj.viewSine + 0.02);
       if (main) obj.inView = inFrustum;
       // Casters are culled against this camera only: a renderView camera
       // wider than the main one can show things beside the screen unshadowed.
       const casts =
-        this.shadowsActive && inside > -(obj.shadowSine + 0.02) && this.castsIntoMap(obj);
+        this.shadowsActive && this.castsIntoMap(obj) && (inFrustum || this.shadowInView(obj));
       obj.show(inFrustum, casts);
     }
+  }
+
+  /** How far inside the frustum a chart direction is, as a sine. Overwrites `dir`. */
+  private inside(dir: Vector3): number {
+    const f = this.frustum;
+    dir.applyQuaternion(scratchQuat);
+    return Math.min((-f.at * dir.z - Math.abs(dir.x)) / f.side, (-f.t * dir.z - Math.abs(dir.y)) / f.cap);
+  }
+
+  private shadowInView(obj: HyperObject): boolean {
+    const inner = Math.tan(obj.viewNear / 2);
+    const outer = Math.tan(obj.viewFar / 2);
+    const radius = (outer - inner) / 2;
+    // Three balls along the shadow, wide enough to leave no gap between them.
+    const reach = 1.1 * Math.hypot(radius, (this.shadowThrow.length() * radius) / 4);
+    for (let i = 0; i <= 2; i++) {
+      const c = scratchDir
+        .copy(obj.viewDir)
+        .multiplyScalar((inner + outer) / 2)
+        .addScaledVector(this.shadowThrow, (radius * i) / 2);
+      const distance = c.length();
+      if (distance <= reach) return true;
+      if (this.inside(c.divideScalar(distance)) > -(reach / distance + 0.02)) return true;
+    }
+    return false;
   }
 
   private castsIntoMap(obj: HyperObject): boolean {
@@ -403,7 +453,8 @@ export class HyperWorld {
     this.renderer.info.reset();
     this.shared.uK.value = HM.K;
     this.shared.uUnitScale.value = HM.unitScale;
-    for (const obj of this.objects) obj.place(this.worldGV, this.shadowReach);
+    this.shared.uTime.value = performance.now() / 1000;
+    for (const obj of this.objects) obj.place(this.worldGV);
 
     // Drawn when shadows are on, and once more after any reallocation even if
     // they are off — see shadowMapDirty. The one extra pass is the price of
@@ -414,6 +465,7 @@ export class HyperWorld {
     if (everything) for (const obj of this.objects) obj.showAll();
     else this.cull(this.camera, true);
     this.syncMatrices();
+    this.shared.pack();
     if (shadowPass) {
       this.renderer.setRenderTarget(this.shadowTarget);
       this.renderer.render(this.scene, this.lightCamera!);
