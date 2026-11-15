@@ -1,5 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, IcosahedronGeometry, Vector3 } from 'three';
 import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { STATIONS } from '../../content/stations';
+import { EXHIBIT_LATERAL } from '../layout';
 import { merge } from '../geometry';
 import { placeOnGround, placeOnGroundVec, toUnits, units } from '../placement';
 import { rebase } from '../rebase';
@@ -145,6 +147,20 @@ interface Region {
   object: HyperObject;
 }
 
+// Tufts stand up to 0.3 tall: anything low and flat needs the lawn cleared under it. Ground point and radius in units.
+function clearings(): Array<[Vector3, number]> {
+  const cabinet = STATIONS.find((s) => s.id === 'data')!;
+  const along = units(cabinet.at);
+  const lateral = units(Math.sign(cabinet.lateral) * EXHIBIT_LATERAL);
+  const dist = Math.acos(Math.cos(along) * Math.cos(lateral));
+  const bearing = Math.atan2(Math.tan(lateral), Math.sin(along));
+  return [
+    [new Vector3(1, 0, 0), 3.4],
+    [new Vector3(-1, 0, 0), 3.2],
+    [new Vector3(Math.sin(dist) * Math.sin(bearing), Math.cos(dist), -Math.sin(dist) * Math.cos(bearing)), 2.6],
+  ];
+}
+
 export function buildScatter(world: HyperWorld): HyperObject[] {
   const objects: HyperObject[] = [];
   const r = rng(0x5ca77e);
@@ -174,6 +190,8 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
   const lawnRadius = toUnits(1);
   const target = Math.round(4 * Math.PI * lawnRadius * lawnRadius * DENSITY);
   const clear = units(PATH_CLEAR);
+  const bare = clearings().map(([at, radius]) => [at, Math.cos(units(radius))] as const);
+  const spot = new Vector3();
 
   for (let placed = 0; placed < target; ) {
     // Uniform on the sphere: acos of a uniform cosine, not a uniform angle.
@@ -185,6 +203,9 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
     const x = Math.sin(dist) * Math.sin(bearing);
     if (Math.asin(Math.abs(x)) < clear) continue;
     placed++;
+    // Built and thrown away, not skipped: skipping would shift the random sequence and move every tuft after it.
+    spot.set(x, Math.cos(dist), -Math.sin(dist) * Math.cos(bearing));
+    const grows = !bare.some(([at, cos]) => at.dot(spot) > cos);
 
     const at = placeOnGround(bearing, dist);
     const yaw = r() * Math.PI * 2;
@@ -200,8 +221,9 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
       for (let i = 0; i < tufts; i++) {
         parts.push(tuftGeometry((r() - 0.5) * 1.1, (r() - 0.5) * 1.1, r));
       }
-      region.object.addGeometry(world.shared, settle(merge(parts)), {
-        color: GRASS[Math.floor(r() * GRASS.length)],
+      const color = GRASS[Math.floor(r() * GRASS.length)];
+      if (grows) region.object.addGeometry(world.shared, settle(merge(parts)), {
+        color,
         ambient: 0.56,
         // Blade-thin shadows are subpixel at any distance you would see them
         // from, and the depth map cannot resolve them without acne.
@@ -218,8 +240,9 @@ export function buildScatter(world: HyperWorld): HyperObject[] {
         g.translate((r() - 0.5) * 1.2, 0, (r() - 0.5) * 1.2);
         parts.push(g);
       }
-      region.object.addGeometry(world.shared, settle(merge(parts)), {
-        color: STONE[Math.floor(r() * STONE.length)],
+      const color = STONE[Math.floor(r() * STONE.length)];
+      if (grows) region.object.addGeometry(world.shared, settle(merge(parts)), {
+        color,
         ambient: 0.54,
         mottleScale: 120,
         mottleAmount: 0.2,

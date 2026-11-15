@@ -53,10 +53,6 @@ import { placeOnGround, units, type Poi } from '../placement';
  * face) and tipped back together, so nothing in the frame can cross the picture
  * whatever the rake. The front faces of the legs are z = 0 and the canvas sits
  * in front of that plane.
- *
- * THE DECK IS AS TALL AS THE GRASS. The lawn is scattered with tufts up to 0.27
- * high and nothing keeps them out from under a landmark, so the platform top is
- * above that and everything else stands on the platform.
  */
 
 interface EaselSpec {
@@ -87,7 +83,7 @@ const EASELS: EaselSpec[] = [
   { azimuth: 330, maxW: 1, maxH: 1, url: '/images/easel3.webp', rake: 0.17, rear: 0.35, trayHole: 2, spare: [[1, 0], [-1, 1]], left: null, wood: 0xecd2a6, sag: 0.035, mess: 0.35, seed: 37 },
 ];
 
-const DECK = 0.3;
+const DECK = 0.1;
 const DECK_INRADIUS = 1.8;
 
 const LEG_S = 1.66;
@@ -939,7 +935,8 @@ function deck(): Part[] {
   const screws = new Soup();
   for (let k = 0; k < 6; k++) {
     const turn = k * (Math.PI / 3);
-    for (const [y, tall] of [[0.193, 0.15], [0.034, 0.156]]) {
+    const top = DECK - 0.028;
+    for (const [y, tall] of [[(top - 0.03) / 2, top + 0.03]]) {
       const len = side - 0.1;
       const x = len / 2;
       const t = tall / 2;
@@ -950,7 +947,7 @@ function deck(): Part[] {
         .strip(v3(-x, y - t, z - 0.004), v3(x, y - t, z - 0.004), v3(x, y - t + 0.004, z), v3(-x, y - t + 0.004, z), v3(0, -1, 1));
       parts.push([grained(plank.done(), 'x').rotateY(turn), SKIRT]);
       for (const sx of [-1, 1]) {
-        for (const dy of [-0.04, 0.04]) {
+        for (const dy of [0.004, 0.034]) {
           const at = v3(sx * (len / 2 - 0.035), y + dy, R - 0.0235).applyAxisAngle(Y, turn);
           screws.disc(at, v3(Math.cos(turn), 0, -Math.sin(turn)), Y, 0.0055, 6, v3(Math.sin(turn), 0, Math.cos(turn)));
         }

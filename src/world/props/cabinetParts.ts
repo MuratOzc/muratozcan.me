@@ -36,7 +36,7 @@ const RECESS = 0.024;
 const PROUD = 0.004;
 
 // Lawn tufts stand up to 0.27 and are scattered without regard to what is built on them.
-const SLAB_TOP = 0.3;
+const SLAB_TOP = 0.1;
 const PAD_TOP = SLAB_TOP + 0.04;
 const BODY_FROM = PAD_TOP + 0.07;
 // Twenty-six modules at this pitch leave the far end about 1.5 above the lawn: over a visitor's head, not in their face.

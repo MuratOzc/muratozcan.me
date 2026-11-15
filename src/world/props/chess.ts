@@ -49,9 +49,6 @@ const LEG_X = 0.355;
 const LEG_Z = 0.555;
 
 const DAIS = { x0: -0.98, x1: 0.98, z0: -0.8, z1: 1.5 };
-// The lawn scatter grows straight through anything low; this is the nearest patch to the triangle's centre with no tuft under the dais or the fallen chair. Re-pick it if scatter.ts or its seed changes.
-const STAGE_X = 0.68;
-const STAGE_Z = 1.27;
 
 const MONO = 'ui-monospace, Consolas, monospace';
 
@@ -1438,7 +1435,7 @@ export function buildChessTable(
   object.rotation.y = yaw;
   const put = (parts: Part[], node?: Group): void => {
     for (const [g, opts] of parts) {
-      object.addGeometry(world.shared, node ? g : g.translate(STAGE_X, 0, STAGE_Z), opts, node);
+      object.addGeometry(world.shared, g, opts, node);
     }
   };
 
@@ -1449,7 +1446,7 @@ export function buildChessTable(
   boardFace.rotateX(-Math.PI / 2);
   // The canvas is painted as white sees the board; this turn puts a1 at the +x/+z corner where square() puts it.
   boardFace.rotateY(Math.PI / 2);
-  boardFace.translate(STAGE_X, BOARD_Y, STAGE_Z);
+  boardFace.translate(0, BOARD_Y, 0);
   object.addGeometry(world.shared, boardFace, {
     map: boardTexture(),
     color: 0xffffff,
@@ -1512,7 +1509,7 @@ export function buildChessTable(
 
   const atlas = atlasTexture();
   for (const g of decals) {
-    object.addGeometry(world.shared, g.translate(STAGE_X, 0, STAGE_Z), {
+    object.addGeometry(world.shared, g, {
       map: atlas,
       color: 0xffffff,
       ambient: 0.9,
@@ -1526,7 +1523,7 @@ export function buildChessTable(
 
   const result = scoreboard();
   put(moved(result.parts, 0.3, FLOOR, 1.1, 0.3));
-  object.addGeometry(world.shared, placed(result.placard, 0.3 + STAGE_X, FLOOR, 1.1 + STAGE_Z, 0.3), {
+  object.addGeometry(world.shared, placed(result.placard, 0.3, FLOOR, 1.1, 0.3), {
     map: scoreboardTexture(),
     color: 0xffffff,
     ambient: 0.9,
@@ -1597,9 +1594,9 @@ export function buildChessTable(
     }
     const { lift, slide } = fall.at(theta);
     king.position.set(
-      STAGE_X + kingHome.x + tipX * slide * SQ,
+      kingHome.x + tipX * slide * SQ,
       kingHome.y + lift * SQ + raise,
-      STAGE_Z + kingHome.z + tipZ * slide * SQ,
+      kingHome.z + tipZ * slide * SQ,
     );
     king.quaternion
       .setFromAxisAngle(tipAxis, theta)
@@ -1611,7 +1608,7 @@ export function buildChessTable(
 
     for (let m = 0; m < movers.length; m++) {
       const pose = poseAt(m, elapsed);
-      movers[m].node.position.set(STAGE_X + pose.x, pose.y, STAGE_Z + pose.z);
+      movers[m].node.position.set(pose.x, pose.y, pose.z);
       movers[m].node.rotation.y = pose.rot;
     }
     poseKing(elapsed);
