@@ -160,15 +160,39 @@ function gearGeometry(teeth: number, solid: boolean): BufferGeometry {
 
   const body = new ExtrudeGeometry(shape, { depth: THICK, bevelEnabled: false });
   body.translate(0, 0, -HALF_T);
-  return merge([
+  const parts: BufferGeometry[] = [
     body,
-    new CylinderGeometry(boss, boss, THICK + 0.012, 14).rotateX(Math.PI / 2),
+    new CylinderGeometry(boss, boss, THICK + 0.012, 16).rotateX(Math.PI / 2),
     new CylinderGeometry(0.02, 0.02, 0.014, 6).rotateX(Math.PI / 2).translate(0, 0, HALF_T + 0.012),
-  ]);
+  ];
+
+  const root = pitchRadius(teeth) - MODULE;
+  const raised = (outer: number, inner: number, proud: number): void => {
+    const ring = lathe(
+      [[outer, HALF_T], [outer - 0.002, HALF_T + proud], [inner + 0.002, HALF_T + proud], [inner, HALF_T]],
+      Math.max(16, Math.round(outer * 90)),
+    ).rotateX(Math.PI / 2);
+    parts.push(ring, ring.clone().rotateY(Math.PI));
+  };
+  raised(root - 0.003, root - 0.019, 0.004);
+  raised(boss + 0.014, boss, 0.003);
+  if (teeth >= 26 && !solid) {
+    for (let k = 0; k < 5; k++) {
+      const a = (2 * Math.PI * (k + 0.5)) / 5;
+      for (const side of [-1, 1]) {
+        parts.push(
+          new CylinderGeometry(0.008, 0.008, 0.008, 6)
+            .rotateX(Math.PI / 2)
+            .translate(Math.cos(a) * 0.072, Math.sin(a) * 0.072, side * (HALF_T + 0.004)),
+        );
+      }
+    }
+  }
+  return merge(parts);
 }
 
-const stampReach = (teeth: number): number => pitchRadius(teeth) - MODULE - 0.012;
-const stampBore = (teeth: number): number => (teeth >= 26 ? 0.06 : 0.05) + 0.012;
+const stampReach = (teeth: number): number => pitchRadius(teeth) - MODULE - 0.022;
+const stampBore = (teeth: number): number => (teeth >= 26 ? 0.06 : 0.05) + 0.018;
 
 function stampGeometry(teeth: number): BufferGeometry {
   const front = new RingGeometry(stampBore(teeth), stampReach(teeth), 40, 1);

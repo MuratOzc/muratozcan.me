@@ -22,6 +22,7 @@ import {
   merge,
   moved,
   pos,
+  roundedRect,
   smooth,
   type Part,
   type Point,
@@ -178,21 +179,6 @@ const PAPER: HyperMaterialOptions = { color: 0xf7f3e6, ambient: 0.66, gloss: 0.0
 const LEATHER: HyperMaterialOptions = { color: 0xcf9258, ambient: 0.55, gloss: 0.34 };
 const STRAP: HyperMaterialOptions = { color: 0x94633a, ambient: 0.55, gloss: 0.3 };
 const BEADS = [0xea6452, 0xf3cb52, 0x74c279, 0x62a1dc, 0xf19f50];
-
-function roundedRect<T extends Path>(path: T, w: number, h: number, r: number): T {
-  const x = w / 2;
-  const y = h / 2;
-  path.moveTo(-x + r, -y);
-  path.lineTo(x - r, -y);
-  path.absarc(x - r, -y + r, r, -Math.PI / 2, 0, false);
-  path.lineTo(x, y - r);
-  path.absarc(x - r, y - r, r, 0, Math.PI / 2, false);
-  path.lineTo(-x + r, y);
-  path.absarc(-x + r, y - r, r, Math.PI / 2, Math.PI, false);
-  path.lineTo(-x, -y + r);
-  path.absarc(-x + r, -y + r, r, Math.PI, Math.PI * 1.5, false);
-  return path;
-}
 
 const BENCH_W = 1.2;
 const DESK_TOP = 0.72;

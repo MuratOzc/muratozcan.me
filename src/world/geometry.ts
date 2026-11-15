@@ -129,3 +129,18 @@ export function rod(from: Vector3, to: Vector3, r: number, rEnd = r, segments = 
   const length = from.distanceTo(to);
   return aimed(new CylinderGeometry(rEnd, r, length, segments).translate(0, length / 2, 0), from, to);
 }
+
+export function roundedRect<T extends Path>(path: T, w: number, h: number, r: number): T {
+  const x = w / 2;
+  const y = h / 2;
+  path.moveTo(-x + r, -y);
+  path.lineTo(x - r, -y);
+  path.absarc(x - r, -y + r, r, -Math.PI / 2, 0, false);
+  path.lineTo(x, y - r);
+  path.absarc(x - r, y - r, r, 0, Math.PI / 2, false);
+  path.lineTo(-x + r, y);
+  path.absarc(-x + r, y - r, r, Math.PI / 2, Math.PI, false);
+  path.lineTo(-x, -y + r);
+  path.absarc(-x + r, -y + r, r, Math.PI, Math.PI * 1.5, false);
+  return path;
+}

@@ -497,6 +497,8 @@ void main() {
     vec3 bounce = reflect(view, n);
     vec3 above = mix(uFogHorizon, uFogZenith, pow(clamp(bounce.y, 0.0, 1.0), 0.6));
     vec3 around = mix(uGroundLight * 0.4, above, smoothstep(-0.2, 0.12, bounce.y));
+    float facing = dot(normalize(bounce.xz + vec2(1e-4)), normalize(uLightDir.xz));
+    around *= mix(1.0, 0.5 + 0.85 * smoothstep(-0.7, 0.9, facing), metal);
     float glance = 1.0 - clamp(dot(n, -view), 0.0, 1.0);
     glance *= glance * glance * glance * glance;
     float mirror = gloss * mix(0.04 + 0.96 * glance, 0.9, metal);
