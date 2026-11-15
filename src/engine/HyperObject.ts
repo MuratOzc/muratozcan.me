@@ -159,10 +159,44 @@ function prepare(geometry: BufferGeometry): BufferGeometry {
 
 type Tint = [number, number, number, number];
 
+/**
+ * A part that can be slid about inside its batch, by rewriting its own
+ * vertices: movement with no node, and so no draw call, of its own.
+ */
+export class MovingPart {
+  private position: BufferAttribute | null = null;
+  private rest: Float32Array | null = null;
+  private start = 0;
+
+  constructor(readonly shaded: boolean) {}
+
+  bind(position: BufferAttribute, start: number, count: number): void {
+    this.position = position;
+    this.start = start;
+    this.rest = (position.array as Float32Array).slice(start * 3, (start + count) * 3);
+  }
+
+  /** Offset from where the part was authored, in the object's own units. Does nothing until the object is in a world. */
+  moveTo(x: number, y: number, z: number): void {
+    const { position, rest } = this;
+    if (!position || !rest) return;
+    const array = position.array as Float32Array;
+    const from = this.start * 3;
+    for (let i = 0; i < rest.length; i += 3) {
+      array[from + i] = rest[i] + x;
+      array[from + i + 1] = rest[i + 1] + y;
+      array[from + i + 2] = rest[i + 2] + z;
+    }
+    position.addUpdateRange(from, rest.length);
+    position.needsUpdate = true;
+  }
+}
+
 interface Part {
   geometry: BufferGeometry;
   tint: Tint;
   surface: [number, number, number] | null;
+  mover?: MovingPart;
 }
 
 interface Pending extends Part {
@@ -232,6 +266,7 @@ function* bake(geometry: BufferGeometry): Generator<void> {
   const normal = geometry.attributes.normal.array as Float32Array;
   const index = geometry.index!.array;
   const tint = geometry.attributes.aTint as BufferAttribute;
+  const unshaded = geometry.userData.unshaded as Uint8Array | undefined;
   const count = position.length / 3;
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
@@ -287,6 +322,7 @@ function* bake(geometry: BufferGeometry): Generator<void> {
   const WEIGHT = [1, 0.75, 0.5, 0.3];
   const open = new Float32Array(count).fill(1);
   for (let v = 0; v < count; v++) {
+    if (unshaded?.[v]) continue;
     const nx = normal[v * 3];
     const ny = normal[v * 3 + 1];
     const nz = normal[v * 3 + 2];
@@ -367,7 +403,9 @@ function mergeParts(parts: Part[]): BufferGeometry {
       return `${p.geometry.id}.${version}:${p.tint.join(',')}:${p.surface?.join(',') ?? ''}`;
     })
     .join(';');
-  const cached = mergedCache.get(signature);
+  // A batch with moving parts is rewritten in place, so it is never shared.
+  const moves = parts.some((p) => p.mover);
+  const cached = moves ? undefined : mergedCache.get(signature);
   if (cached) return cached;
 
   let vertexCount = 0;
@@ -386,6 +424,7 @@ function mergeParts(parts: Part[]): BufferGeometry {
   const grain = surfaced ? new Float32Array(vertexCount * 3) : null;
   const index = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
 
+  const ranges: Array<[MovingPart, number, number]> = [];
   let v = 0;
   let i = 0;
   for (const part of parts) {
@@ -413,6 +452,7 @@ function mergeParts(parts: Part[]): BufferGeometry {
 
     const src = g.index!;
     for (let k = 0; k < src.count; k++) index[i++] = src.getX(k) + v;
+    if (part.mover) ranges.push([part.mover, v, count]);
     v += count;
   }
 
@@ -427,7 +467,14 @@ function mergeParts(parts: Part[]): BufferGeometry {
   }
   merged.setIndex(new BufferAttribute(index, 1));
   merged.computeBoundingSphere();
-  mergedCache.set(signature, merged);
+  if (moves) {
+    const unshaded = new Uint8Array(vertexCount);
+    for (const [mover, start, count] of ranges) {
+      mover.bind(merged.attributes.position as BufferAttribute, start, count);
+      if (!mover.shaded) unshaded.fill(1, start, start + count);
+    }
+    merged.userData.unshaded = unshaded;
+  } else mergedCache.set(signature, merged);
   bakes.push(bake(merged));
   queueBakes();
   return merged;
@@ -571,6 +618,24 @@ export class HyperObject extends Group {
       parent: node,
       key: batchKey(node, full),
     });
+  }
+
+  /**
+   * Like addGeometry, for a part that will be slid about afterwards. Pass
+   * `shaded: false` for parts that are hidden at rest: crevice shading is
+   * worked out once, where the part was authored.
+   */
+  addMovingGeometry(
+    shared: SharedUniforms,
+    geometry: BufferGeometry,
+    opts: HyperMaterialOptions = {},
+    parent?: Object3D,
+    shaded = true,
+  ): MovingPart {
+    this.addGeometry(shared, geometry, opts, parent);
+    const mover = new MovingPart(shaded);
+    this.pending[this.pending.length - 1].mover = mover;
+    return mover;
   }
 
   addLiveGeometry(

@@ -1,88 +1,120 @@
-import { CylinderGeometry, Group, PlaneGeometry, type BufferGeometry } from 'three';
-import { RoundedBoxGeometry } from '../geometry';
-import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import { Vector3, type BufferGeometry, type Texture } from 'three';
+import {
+  HyperObject,
+  type GyroVector,
+  type MovingPart,
+  type HyperMaterialOptions,
+  type HyperWorld,
+} from '../../engine';
+import { L, t, type Localized } from '../../content/i18n';
 import { merge } from '../geometry';
-import { makeTextTexture } from '../text';
+import { localizedCanvasTexture } from '../text';
+import {
+  DRAWERS,
+  LABELLED,
+  MOVING,
+  TRAVEL,
+  buildCabinet,
+  drawerSeat,
+  reachOf,
+  type Cell,
+  type Zone,
+} from './cabinetParts';
+import { chartsFor, intoChart, place, tessellate, widening, type Chart } from './cabinetTower';
 
-/**
- * Station 6: data — seven filing cabinets standing as a B-tree.
- *
- * The arrangement is the index: one root at the back, two branches, four
- * leaves across the front, each labelled with the key range it holds. Walk up
- * and a query is always running — a drawer opens at the root, then at the
- * branch that owns the key, then at the leaf where the row actually lives,
- * and the three stay open just long enough for you to see the path before
- * they slide shut and another query starts.
- *
- * That cascade is the whole point of an index, and it is far easier to watch
- * than to explain: three drawers out of twenty-one, every time, no matter how
- * many rows are in there.
- */
+// A chart on the ground cannot reach the sky pole, so the middle of the cabinet is its own object, placed up there.
+const ATLAS = 1024;
+const CARD_W = 256;
+const CARD_H = 87;
+const CARD_PITCH = 96;
+const CARDS_BOTTOM = 320;
+const MONO = 'ui-monospace, Consolas, monospace';
+const CARD_PAPER = '#f6f1e2';
+const INK = '#2b3138';
+const BANDS = ['#c9503f', '#3f6fa8', '#5d9a56'];
 
-const CAB_W = 0.4;
-const CAB_H = 0.92;
-const CAB_D = 0.48;
-const DRAWERS = 3;
-/** How far a drawer rides out, in authored units. */
-const SLIDE = 0.3;
-
-/** Key ranges, in tree order: root, two branches, four leaves. */
-const RANGES = ['A–Z', 'A–M', 'N–Z', 'A–F', 'G–M', 'N–S', 'T–Z'];
-
-/** Where each cabinet stands. Back to front: 1, 2, 4. */
-const SPOTS: Array<[number, number]> = [
-  [0, -0.95],
-  [-0.7, 0],
-  [0.7, 0],
-  [-1.05, 0.95],
-  [-0.35, 0.95],
-  [0.35, 0.95],
-  [1.05, 0.95],
-];
-
-/** Manila and paper, authored bright for the engine's colour crush. */
-const MANILA = 0xe8d6a8;
-const PAPER = 0xf4f1e6;
-
-/**
- * The folders that fill a drawer: a row of uprights leaning on each other,
- * with the odd one riding proud. Built around the drawer's own origin so
- * they ride out with it — the reveal only works if the contents move too.
- */
-function folderStack(): { manila: BufferGeometry; tabs: BufferGeometry } {
-  const manila: BufferGeometry[] = [];
-  const tabs: BufferGeometry[] = [];
-  const COUNT = 9;
-  for (let i = 0; i < COUNT; i++) {
-    const z = -0.11 + i * 0.036;
-    // A stack is never tidy: each folder leans and rides at its own height.
-    const lean = Math.sin(i * 2.3) * 0.09;
-    const rise = Math.sin(i * 1.7) * 0.012;
-    const f = new RoundedBoxGeometry(0.29, 0.165, 0.012, 1, 0.004);
-    f.rotateX(lean);
-    f.translate(0, 0.012 + rise, z);
-    manila.push(f);
-    // Every third folder gets a paper tab standing proud of the manila.
-    if (i % 3 === 1) {
-      const tab = new RoundedBoxGeometry(0.1, 0.03, 0.008, 1, 0.003);
-      tab.rotateX(lean);
-      tab.translate(-0.05 + (i % 2) * 0.09, 0.108 + rise, z);
-      tabs.push(tab);
-    }
-  }
-  return {
-    manila: merge(manila),
-    tabs: merge(tabs),
-  };
+function cell(x: number, y: number, w: number, h: number): Cell {
+  return [(x + 1) / ATLAS, 1 - (y + h - 1) / ATLAS, (x + w - 1) / ATLAS, 1 - (y + 1) / ATLAS];
 }
 
-interface Drawer {
-  node: Group;
-  /** 0 shut, 1 fully out. Eased toward `target` every frame. */
-  open: number;
-  target: number;
-  /** The shut Z, so the slide is measured from it and never drifts. */
-  baseZ: number;
+const CARD_CELLS: Cell[] = Array.from({ length: LABELLED }, (_, i) =>
+  cell((i % 4) * CARD_W, Math.floor(i / 4) * CARD_PITCH, CARD_W, CARD_H),
+);
+
+const SPANS = ['a – f', 'g – l', 'm – r', 's – z'];
+
+function range(letter: Localized, span: number): Localized {
+  const [from, to] = SPANS[span].split(' – ');
+  const write = (c: string) => `${c}${from} – ${c}${to}`;
+  return L(write(letter.en), write(letter.tr));
+}
+
+const FIRST_LETTERS = [L('A', 'A'), L('B', 'B'), L('C', 'C')];
+const LAST_LETTERS = [L('X', 'V'), L('Y', 'Y'), L('Z', 'Z')];
+const STATION_LABELS = CARD_CELLS.map((_, i) => range(FIRST_LETTERS[Math.floor(i / 4)], i % 4));
+const END_LABELS = CARD_CELLS.map((_, i) => range(LAST_LETTERS[Math.floor(i / 4)], i % 4));
+
+function paintCards(ctx: CanvasRenderingContext2D, labels: Localized[]): void {
+  ctx.fillStyle = CARD_PAPER;
+  ctx.fillRect(0, 0, ATLAS, CARDS_BOTTOM);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  labels.forEach((label, i) => {
+    const x = (i % 4) * CARD_W;
+    const y = Math.floor(i / 4) * CARD_PITCH;
+    ctx.fillStyle = BANDS[Math.floor(i / 4) % BANDS.length];
+    ctx.fillRect(x, y, 26, CARD_H);
+    ctx.fillStyle = INK;
+    const text = t(label);
+    let size = 50;
+    do {
+      ctx.font = `600 ${size}px ${MONO}`;
+      if (ctx.measureText(text).width <= CARD_W - 26 - 28) break;
+      size -= 2;
+    } while (size > 12);
+    ctx.fillText(text, x + 26 + (CARD_W - 26) / 2, y + CARD_H / 2 + 2);
+  });
+}
+
+function atlas(labels: Localized[]): Texture {
+  return localizedCanvasTexture(ATLAS, ATLAS, (ctx) => {
+    ctx.fillStyle = CARD_PAPER;
+    ctx.fillRect(0, 0, ATLAS, ATLAS);
+    paintCards(ctx, labels);
+  });
+}
+
+type Batch = Map<HyperMaterialOptions, BufferGeometry[]>;
+
+const OPENING = 1.5;
+const CLOSING = 1.3;
+const NEAR = 24;
+const AT_ONCE = 2;
+
+function eased(u: number): number {
+  const x = Math.min(1, Math.max(0, u));
+  return x * x * (3 - 2 * x);
+}
+
+function openness(at: number, held: number): number {
+  if (at < OPENING) return eased(at / OPENING);
+  return 1 - eased((at - OPENING - held) / CLOSING);
+}
+
+interface Ride {
+  parts: MovingPart[];
+  chart: Chart;
+  y: number;
+  z: number;
+  home: Vector3;
+  started: number;
+  held: number;
+}
+
+interface Pool {
+  idle: Ride[];
+  busy: Ride[];
+  next: number;
 }
 
 export interface CabinetsResult {
@@ -90,240 +122,130 @@ export interface CabinetsResult {
   tick: (worldGV: GyroVector, dt: number) => void;
 }
 
-export function buildCabinets(
-  world: HyperWorld,
-  at: GyroVector,
-  yaw: number,
-): CabinetsResult {
-  const object = new HyperObject(at);
-  object.rotation.y = yaw;
+export function buildCabinets(world: HyperWorld, at: GyroVector, yaw: number): CabinetsResult {
+  const charts = chartsFor(at, yaw);
 
-  const STEEL = 0xb4bcc4;
-  const DRAWER = 0xa6aeb6;
-  const BRASS = 0xd9c187;
+  const stand = (name: string, gv: GyroVector, tanK: boolean, turn: number): HyperObject => {
+    const object = new HyperObject(gv, tanK);
+    object.name = name;
+    object.rotation.y = turn;
+    return object;
+  };
+  const floor = stand('cabinet:station', at, true, yaw);
+  const run = stand('cabinet:station-run', at, true, yaw);
+  const crown = stand('cabinet:pole', charts.pole.gv, false, 0);
+  const farRun = stand('cabinet:far-run', charts.far.gv, true, 0);
+  const end = stand('cabinet:far', charts.far.gv, true, 0);
 
-  // ---------------- the floor: paved, because seven cabinets on grass is a
-  // fly-tip, not an archive.
-  const floor = new RoundedBoxGeometry(3.0, 0.1, 2.9, 2, 0.02);
-  floor.translate(0, 0.05, 0);
-  object.addGeometry(world.shared, floor, { color: 0xb0aea6, ambient: 0.62 });
+  const homes: Record<Zone, { object: HyperObject; chart: Chart }> = {
+    floor: { object: floor, chart: charts.station },
+    run: { object: run, chart: charts.station },
+    crown: { object: crown, chart: charts.pole },
+    farRun: { object: farRun, chart: charts.far },
+    end: { object: end, chart: charts.far },
+  };
 
-  const drawers: Drawer[][] = [];
+  const batches = new Map<string, Batch>();
+  const sliding = new Map<number, Map<string, Batch>>();
+  buildCabinet(
+    (g, m, zone, slot = 'solid', drawer) => {
+      const home = homes[zone];
+      g.computeBoundingBox();
+      const { min, max } = g.boundingBox!;
+      const wide = widening(reachOf(zone, min.y, max.y));
+      const fine = tessellate(g, 0.285, wide, zone === 'crown' ? wide : 1);
+      intoChart(fine, home.chart);
 
-  SPOTS.forEach(([x, z], c) => {
-    // ---- carcass: a shell with a plinth, open at the front.
-    const carcass: BufferGeometry[] = [];
-    const shell = new RoundedBoxGeometry(CAB_W, CAB_H, CAB_D, 2, 0.014);
-    shell.translate(x, 0.1 + CAB_H / 2, z);
-    carcass.push(shell);
-    const plinth = new RoundedBoxGeometry(CAB_W - 0.05, 0.05, CAB_D - 0.05, 1, 0.01);
-    plinth.translate(x, 0.125, z);
-    carcass.push(plinth);
-    object.addGeometry(
-      world.shared,
-      merge(carcass),
-      { color: STEEL, ambient: 0.55 },
-    );
-
-    // ---- the key-range plate, screwed to the top rail. This is what makes
-    // the arrangement legible as an index rather than as furniture.
-    const plate = new PlaneGeometry(CAB_W * 0.72, 0.1, 1, 1);
-    plate.translate(x, 0.1 + CAB_H - 0.085, z + CAB_D / 2 + 0.006);
-    object.addGeometry(world.shared, plate, {
-      map: makeTextTexture(RANGES[c], {
-        width: 512,
-        height: 160,
-        color: '#2b3138',
-        letterSpacing: 6,
-      }),
-      color: 0xffffff,
-      ambient: 0.92,
-      alphaTest: 0.3,
-      alphaBlend: true,
-      castShadow: false,
-      receiveShadow: false,
-    });
-
-    // ---- the drawers. Each is its own node so it can ride out on its own;
-    // the geometry is authored around that node's origin, so animating is a
-    // single position write per frame.
-    const set: Drawer[] = [];
-    for (let d = 0; d < DRAWERS; d++) {
-      const node = new Group();
-      // Shut position. The front sits just proud of the carcass face.
-      node.position.set(x, 0.1 + 0.17 + d * 0.26, z + 0.02);
-      object.add(node);
-
-      const parts: BufferGeometry[] = [];
-      const front = new RoundedBoxGeometry(CAB_W - 0.03, 0.22, 0.03, 2, 0.008);
-      front.translate(0, 0, CAB_D / 2 - 0.01);
-      parts.push(front);
-      // The tray behind the face. An OPEN box — floor, two sides and a back,
-      // no lid — because a solid one would seal the folders inside it where
-      // nobody can ever see them, which rather defeats the exhibit.
-      const TW = CAB_W - 0.07;
-      const TD = CAB_D - 0.1;
-      const TH = 0.19;
-      const TZ = CAB_D / 2 - 0.07 - TD / 2 + 0.06;
-      const floorPlate = new RoundedBoxGeometry(TW, 0.012, TD, 1, 0.004);
-      floorPlate.translate(0, -TH / 2 + 0.006, TZ);
-      parts.push(floorPlate);
-      for (const sx of [-1, 1]) {
-        const wall = new RoundedBoxGeometry(0.012, TH, TD, 1, 0.004);
-        wall.translate(sx * (TW / 2 - 0.006), 0, TZ);
-        parts.push(wall);
+      const key = `${zone}:${slot}`;
+      let group = batches;
+      if (drawer !== undefined) {
+        group = sliding.get(drawer) ?? new Map();
+        sliding.set(drawer, group);
       }
-      const back = new RoundedBoxGeometry(TW, TH, 0.012, 1, 0.004);
-      back.translate(0, 0, TZ - TD / 2 + 0.006);
-      parts.push(back);
-      object.addGeometry(
-        world.shared,
-        merge(parts),
-        { color: DRAWER, ambient: 0.52 },
-        node,
-      );
+      let batch = group.get(key);
+      if (!batch) group.set(key, (batch = new Map()));
+      const parts = batch.get(m);
+      if (parts) parts.push(fine);
+      else batch.set(m, [fine]);
+    },
+    {
+      label: (drawer) => CARD_CELLS[drawer] ?? CARD_CELLS[drawer - (DRAWERS - LABELLED)],
+    },
+  );
 
-      // Brass pull.
-      const pull = new CylinderGeometry(0.012, 0.012, CAB_W * 0.4, 8);
-      pull.rotateZ(Math.PI / 2);
-      pull.translate(0, -0.02, CAB_D / 2 + 0.012);
-      object.addGeometry(
-        world.shared,
-        pull,
-        { color: BRASS, ambient: 0.6 },
-        node,
-      );
-
-      // The contents. Every drawer is full, because any drawer can open.
-      const stack = folderStack();
-      object.addGeometry(
-        world.shared,
-        stack.manila,
-        { color: MANILA, ambient: 0.6 },
-        node,
-      );
-      object.addGeometry(
-        world.shared,
-        stack.tabs,
-        { color: PAPER, ambient: 0.68 },
-        node,
-      );
-
-      set.push({ node, open: 0, target: 0, baseZ: node.position.z });
-    }
-    drawers.push(set);
-  });
-
-  // ---------------- the paperwork on the floor.
-  //
-  // Someone has been in here. Loose sheets and a dropped folder, lying where
-  // they fell. These are thin BOXES rather than ground decals: a decal a few
-  // millimetres over the floor is exactly the case the shadow map cannot
-  // resolve, and it comes back as a dark blot.
-  // Rest the paperwork a hair above the paving rather than exactly on it:
-  // coplanar faces fight for depth.
-  const FLOOR_TOP = 0.1 + 0.006;
-  const sheets: BufferGeometry[] = [];
-  const folders: BufferGeometry[] = [];
-
-  const SCATTER: Array<[number, number, number, boolean]> = [
-    // x, z, spin, isFolder
-    [0.15, 1.35, 0.42, true],
-    [-0.68, 1.3, -0.75, false],
-    [-0.9, 1.42, 0.15, false],
-    [1.32, 0.62, 1.15, false],
-    [-1.35, 0.35, 0.28, true],
-    [0.42, -0.48, -0.4, false],
-    [-0.28, -0.52, 0.95, false],
-    [1.2, -0.75, -0.25, false],
-  ];
-
-  for (const [x, z, spin, isFolder] of SCATTER) {
-    if (isFolder) {
-      // A folder open on the floor, its contents half out.
-      const cover = new RoundedBoxGeometry(0.3, 0.008, 0.22, 1, 0.003);
-      cover.rotateY(spin);
-      cover.translate(x, FLOOR_TOP + 0.004, z);
-      folders.push(cover);
-      for (let s = 0; s < 3; s++) {
-        const sheet = new RoundedBoxGeometry(0.2, 0.005, 0.15, 1, 0.002);
-        sheet.rotateY(spin + 0.25 + s * 0.22);
-        sheet.translate(
-          x + 0.16 + s * 0.05,
-          FLOOR_TOP + 0.009 + s * 0.005,
-          z + 0.05 - s * 0.04,
+  const lit: HyperMaterialOptions = { ambient: 0.92, castShadow: false, receiveShadow: false };
+  const text: Partial<Record<Zone, HyperMaterialOptions>> = {
+    floor: { ...lit, map: atlas(STATION_LABELS) },
+    end: { ...lit, map: atlas(END_LABELS) },
+  };
+  const aloft: HyperMaterialOptions = { castShadow: false, receiveShadow: false };
+  const optionsFor = (zone: Zone, slot: string, m: HyperMaterialOptions): HyperMaterialOptions => {
+    if (slot === 'text') return { ...m, ...text[zone] };
+    return zone === 'floor' || zone === 'end' ? m : { ...m, ...aloft };
+  };
+  for (const [key, batch] of batches) {
+    const [zone, slot] = key.split(':') as [Zone, string];
+    for (const [m, parts] of batch) homes[zone].object.addGeometry(world.shared, merge(parts), optionsFor(zone, slot, m));
+  }
+  const handles = new Map<number, MovingPart[]>();
+  for (const [drawer, group] of sliding) {
+    const parts: MovingPart[] = [];
+    for (const [key, batch] of group) {
+      const [zone, slot] = key.split(':') as [Zone, string];
+      for (const [m, pieces] of batch) {
+        parts.push(
+          homes[zone].object.addMovingGeometry(world.shared, merge(pieces), optionsFor(zone, slot, m), undefined, slot !== 'tray'),
         );
-        sheets.push(sheet);
       }
-    } else {
-      const sheet = new RoundedBoxGeometry(0.19, 0.005, 0.145, 1, 0.002);
-      sheet.rotateY(spin);
-      sheet.translate(x, FLOOR_TOP + 0.004, z);
-      sheets.push(sheet);
     }
+    handles.set(drawer, parts);
   }
 
-  object.addGeometry(
-    world.shared,
-    merge(folders),
-    { color: MANILA, ambient: 0.66, receiveShadow: false },
-  );
-  object.addGeometry(
-    world.shared,
-    merge(sheets),
-    { color: PAPER, ambient: 0.72, receiveShadow: false },
-  );
+  for (const object of [floor, end, run, farRun, crown]) world.add(object);
 
-  world.add(object);
+  const pools: Pool[] = [0, 1, 2].map(() => ({ idle: [], busy: [], next: 0 }));
+  for (const i of MOVING) {
+    const seat = drawerSeat(i);
+    const chart = homes[seat.zone].chart;
+    const ride: Ride = {
+      parts: handles.get(i)!,
+      chart,
+      y: seat.y,
+      z: seat.z,
+      home: place(chart, 0, seat.y, seat.z, new Vector3()),
+      started: 0,
+      held: 0,
+    };
+    pools[i < NEAR ? 0 : i >= DRAWERS - NEAR ? 2 : 1].idle.push(ride);
+  }
 
-  // ---------------- the query.
-  //
-  // Root, then the branch owning the key, then the leaf holding the row. The
-  // leaf is always one of the two below the chosen branch, so the path down
-  // the tree is a real path, not three unrelated cabinets lighting up.
+  const shift = new Vector3();
   let clock = 0;
-  let query = 0;
-
-  const path = (q: number): [number, number, number] => {
-    const branch = q % 2;
-    const leaf = branch * 2 + ((q >> 1) % 2);
-    return [0, 1 + branch, 3 + leaf];
-  };
-
-  const tick = (_worldGV: GyroVector, dt: number) => {
+  const tick = (_worldGV: GyroVector, dt: number): void => {
     clock += dt;
-    // One full query cycle, then the next.
-    const CYCLE = 4.6;
-    if (clock > CYCLE) {
-      clock -= CYCLE;
-      query++;
-    }
-
-    const [root, branch, leaf] = path(query);
-    // Which drawer of each cabinet — rotated per query so the same three
-    // drawers are not the only ones that ever move.
-    const pick = (level: number) => (query + level) % DRAWERS;
-
-    for (let c = 0; c < drawers.length; c++) {
-      for (let d = 0; d < DRAWERS; d++) {
-        let want = 0;
-        if (clock < 3.4) {
-          if (c === root && d === pick(0) && clock > 0.15) want = 1;
-          if (c === branch && d === pick(1) && clock > 0.85) want = 1;
-          if (c === leaf && d === pick(2) && clock > 1.55) want = 1;
-        }
-        drawers[c][d].target = want;
+    for (const pool of pools) {
+      if (clock >= pool.next && pool.busy.length < AT_ONCE && pool.idle.length > 0) {
+        const [ride] = pool.idle.splice(Math.floor(Math.random() * pool.idle.length), 1);
+        ride.started = clock;
+        ride.held = 0.8 + Math.random() * 2.4;
+        pool.busy.push(ride);
+        pool.next = clock + 0.7 + Math.random() * 2.6;
       }
-    }
-
-    for (const set of drawers) {
-      for (const dr of set) {
-        // Ease rather than snap: a drawer has mass.
-        dr.open += (dr.target - dr.open) * Math.min(1, dt * 5.5);
-        dr.node.position.z = dr.baseZ + dr.open * SLIDE;
+      for (let k = pool.busy.length - 1; k >= 0; k--) {
+        const ride = pool.busy[k];
+        const since = clock - ride.started;
+        const done = since >= OPENING + ride.held + CLOSING;
+        const out = done ? 0 : TRAVEL * openness(since, ride.held);
+        // A drawer pushed straight out in authored space climbs off its runners: its path is the cabinet's own straight line, mapped into the chart.
+        place(ride.chart, 0, ride.y, ride.z + out, shift).sub(ride.home);
+        for (const part of ride.parts) part.moveTo(shift.x, shift.y, shift.z);
+        if (done) {
+          pool.busy.splice(k, 1);
+          pool.idle.push(ride);
+        }
       }
     }
   };
 
-  return { object, tick };
+  return { object: floor, tick };
 }

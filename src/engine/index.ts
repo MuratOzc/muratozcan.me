@@ -36,7 +36,7 @@ export type { TestResult } from './math/selftest';
 
 export { HyperWorld } from './HyperWorld';
 export type { Atmosphere, HyperWorldOptions, RenderQuality } from './HyperWorld';
-export { HyperObject, SHADOW_LAYER } from './HyperObject';
+export { HyperObject, MovingPart, SHADOW_LAYER } from './HyperObject';
 export { Controls } from './Controls';
 export {
   createHyperMaterials,
