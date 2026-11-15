@@ -1,6 +1,6 @@
-import { BufferAttribute, type BufferGeometry } from 'three';
+import { BufferAttribute, LatheGeometry, Vector2, type BufferGeometry } from 'three';
 import { RoundedBoxGeometry as ThreeRoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * Merge authored parts into one buffer.
@@ -50,4 +50,16 @@ export function grained(
   }
   geometry.setAttribute('grain', new BufferAttribute(out, 3));
   return geometry;
+}
+
+export function lathe(profile: Array<[number, number]>, segments: number): BufferGeometry {
+  return new LatheGeometry(profile.map(([x, y]) => new Vector2(x, y)), segments);
+}
+
+export function smooth(geometry: BufferGeometry): BufferGeometry {
+  geometry.deleteAttribute('normal');
+  geometry.deleteAttribute('uv');
+  const welded = mergeVertices(geometry, 1e-6);
+  welded.computeVertexNormals();
+  return welded;
 }

@@ -493,7 +493,7 @@ void main() {
     vec3 tinted = mix(vec3(1.0), base, metal);
     vec3 halfway = normalize(uLightDir - view);
     float highlight = pow(max(dot(n, halfway), 0.0), mix(6.0, 240.0, gloss * gloss));
-    highlight *= (0.04 + 1.5 * gloss) * step(0.0, ndl) * sunlit;
+    highlight *= gloss * (0.3 + 1.4 * gloss) * step(0.0, ndl) * sunlit;
     vec3 bounce = reflect(view, n);
     vec3 above = mix(uFogHorizon, uFogZenith, pow(clamp(bounce.y, 0.0, 1.0), 0.6));
     vec3 around = mix(uGroundLight * 0.4, above, smoothstep(-0.2, 0.12, bounce.y));

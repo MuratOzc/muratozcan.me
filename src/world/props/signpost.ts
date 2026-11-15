@@ -4,15 +4,12 @@ import {
   CylinderGeometry,
   ExtrudeGeometry,
   IcosahedronGeometry,
-  LatheGeometry,
   Path,
   PlaneGeometry,
   Shape,
   SphereGeometry,
   TorusGeometry,
-  Vector2,
 } from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   HyperObject,
   type GyroVector,
@@ -20,7 +17,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { L, type Localized } from '../../content/i18n';
-import { RoundedBoxGeometry, grained } from '../geometry';
+import { RoundedBoxGeometry, grained, lathe, smooth } from '../geometry';
 import { makeLocalizedTextTexture } from '../text';
 
 const PLATES: Localized[] = [
@@ -85,10 +82,6 @@ function trace<T extends Path>(path: T, points: Point[]): T {
   points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
   path.closePath();
   return path;
-}
-
-function lathe(profile: Point[], segments: number): BufferGeometry {
-  return new LatheGeometry(profile.map(([x, y]) => new Vector2(x, y)), segments);
 }
 
 function fingerGeometry(): { board: BufferGeometry; rim: BufferGeometry } {
@@ -372,11 +365,8 @@ export function buildSignpost(
       const a = (k / count) * Math.PI * 2 + r() * 0.3;
       const size = 0.058 + r() * 0.032;
       const rough = new IcosahedronGeometry(size, 2);
-      rough.deleteAttribute('normal');
-      rough.deleteAttribute('uv');
-      const cobble = mergeVertices(rough, 1e-6);
       const lump = [r() * 6, r() * 6, r() * 6];
-      const p = cobble.attributes.position;
+      const p = rough.attributes.position;
       for (let v = 0; v < p.count; v++) {
         const x = p.getX(v);
         const y = p.getY(v);
@@ -387,7 +377,7 @@ export function buildSignpost(
           0.07 * Math.sin((y / size) * 3.1 + lump[2]);
         p.setXYZ(v, x * k, y * k, z * k);
       }
-      cobble.computeVertexNormals();
+      const cobble = smooth(rough);
       cobble.scale(1, 0.46, 0.75 + r() * 0.35);
       cobble.rotateY(r() * Math.PI);
       cobble.translate(Math.cos(a) * radius, size * 0.12, Math.sin(a) * radius);
