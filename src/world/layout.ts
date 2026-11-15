@@ -19,5 +19,5 @@ export const EXHIBIT_LATERAL = 5.0;
  */
 export const SENTRIES: Array<[number, number]> = [
   [13.0, -7.2],
-  [51.0, 7.6],
+  [56.5, 7.2],
 ];

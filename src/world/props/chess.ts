@@ -1,90 +1,104 @@
 import {
   BoxGeometry,
+  BufferGeometry,
+  ConeGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
+  Float32BufferAttribute,
   Group,
-  LatheGeometry,
-  Path,
   PlaneGeometry,
+  Quaternion,
   Shape,
   SphereGeometry,
-  type BufferGeometry,
+  Vector3,
   type Texture,
 } from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from '../geometry';
-import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
+import {
+  HyperObject,
+  type GyroVector,
+  type HyperMaterialOptions,
+  type HyperWorld,
+} from '../../engine';
 import { L, t, upper, type Localized } from '../../content/i18n';
-import { merge } from '../geometry';
+import {
+  RoundedBoxGeometry,
+  across,
+  box,
+  grained,
+  moved,
+  pos,
+  rod,
+  type Part,
+  type Point,
+} from '../geometry';
 import { localizedCanvasTexture } from '../text';
 
-/**
- * The chess table: Özcan – Carlsen, 1–0.
- *
- * The board plays the game rather than reporting it. A scholar's mate (1.e4 e5
- * 2.Bc4 Nc6 3.Qh5 Nf6 4.Qxf7#) runs on a loop: seven plies, the queen takes on
- * f7, the position sits mated long enough to be read, and the pieces go home.
- * The scoreboard and the scoresheets are the record of that game and do not
- * move. Whether the game took place is between the placard and its conscience.
- *
- * Everything is laid out as a real tournament board would be: players face
- * each other along ±x, the clock sits at the far edge where both can read it,
- * scoresheets and pens lie on the near edge, chairs pushed back from a game
- * that ended early. The visitor arrives from -z and reads the whole thing
- * broadside.
- *
- * Pieces are turned Staunton profiles at true proportions — king 1.8 squares
- * tall, base a shade under one square wide — revolved from smooth paths, not
- * five-point polylines.
- *
- * A piece earns its own node by moving. The seven the game touches get one;
- * the other twenty-five stay merged into one geometry per side, which is why
- * this animates in nine draw calls rather than thirty-three.
- */
-
-/** One board square. Everything about the set is expressed as a multiple. */
 const SQ = 0.058;
 const FIELD = 8 * SQ;
-/** Border of the inlaid board panel, outside the playing field. */
 const BORDER = 0.046;
 const FACE = FIELD + 2 * BORDER;
 
-const TOP_Y = 0.452;
-/** Top surface of the board — where the pieces stand. */
-const BOARD_Y = 0.4675;
+const FLOOR = 0.06;
+const TOP_Y = FLOOR + 0.455;
+const BOARD_Y = TOP_Y + 0.018;
 
-const WOOD = 0xb08d62;
-const DARKWOOD = 0x8a6f52;
-const EBONY = 0x6d5745;
+const HALF_X = 0.42;
+const HALF_Z = 0.62;
+const RIM = 0.045;
+const LEG_X = 0.355;
+const LEG_Z = 0.555;
+
+const DAIS = { x0: -0.98, x1: 0.98, z0: -0.8, z1: 1.5 };
+// The lawn scatter grows straight through anything low; this is the nearest patch to the triangle's centre with no tuft under the dais or the fallen chair. Re-pick it if scatter.ts or its seed changes.
+const STAGE_X = 0.68;
+const STAGE_Z = 1.27;
 
 const MONO = 'ui-monospace, Consolas, monospace';
+
+const MAHOGANY: HyperMaterialOptions = { color: 0xa66f4e, ambient: 0.55, gloss: 0.42, grain: 0.24 };
+const WALNUT: HyperMaterialOptions = { color: 0xb08258, ambient: 0.54, gloss: 0.3, grain: 0.26 };
+const PLYWOOD: HyperMaterialOptions = { color: 0xd9bd92, ambient: 0.55, gloss: 0.1, grain: 0.2 };
+const BAIZE: HyperMaterialOptions = { color: 0x5c9a70, ambient: 0.62, gloss: 0.01 };
+const CARPET: HyperMaterialOptions = { color: 0xb4484c, ambient: 0.62, gloss: 0.01 };
+const FASCIA: HyperMaterialOptions = { color: 0x6f665e, ambient: 0.55, gloss: 0.12 };
+const LEATHER: HyperMaterialOptions = { color: 0x9a6248, ambient: 0.56, gloss: 0.36 };
+const BRASS: HyperMaterialOptions = { color: 0xe9cb7a, ambient: 0.56, gloss: 0.6, metal: 0.9 };
+const STEEL: HyperMaterialOptions = { color: 0xdde1e4, ambient: 0.62, gloss: 0.5, metal: 0.6 };
+const ENAMEL: HyperMaterialOptions = { color: 0x5c6168, ambient: 0.56, gloss: 0.45, metal: 0.3 };
+const PLASTIC: HyperMaterialOptions = { color: 0x5c6168, ambient: 0.56, gloss: 0.35 };
+const RUBBER: HyperMaterialOptions = { color: 0x4a4d52, ambient: 0.55, gloss: 0.05 };
+const PAPER: HyperMaterialOptions = { color: 0xf7f3e6, ambient: 0.7, gloss: 0.04 };
+const BOXWOOD: HyperMaterialOptions = { color: 0xf2deae, ambient: 0.56, gloss: 0.5 };
+const EBONY: HyperMaterialOptions = { color: 0x5e4f49, ambient: 0.5, gloss: 0.62 };
+const FELT: HyperMaterialOptions = { color: 0x4f8a64, ambient: 0.6, gloss: 0.01 };
+const CUT: HyperMaterialOptions = { color: 0x43382f, ambient: 0.4, gloss: 0.02 };
+const BOARD_EDGE: HyperMaterialOptions = { color: 0x8f6748, ambient: 0.52, gloss: 0.4, grain: 0.2 };
 
 type PieceKind = 'P' | 'R' | 'N' | 'B' | 'Q' | 'K';
 /** [file 0-7 = a-h, rank 0-7 = 1-8] */
 type Square = [number, number];
 
-/** The men who never move. Everything the game touches is in MOVERS instead. */
 const WHITE_STATIC: Array<[PieceKind, number, number]> = [
   ['P', 0, 1], ['P', 1, 1], ['P', 2, 1], ['P', 3, 1], ['P', 5, 1], ['P', 6, 1], ['P', 7, 1],
   ['R', 0, 0], ['N', 1, 0], ['B', 2, 0], ['K', 4, 0], ['N', 6, 0], ['R', 7, 0],
 ];
 const BLACK_STATIC: Array<[PieceKind, number, number]> = [
   ['P', 0, 6], ['P', 1, 6], ['P', 2, 6], ['P', 3, 6], ['P', 6, 6], ['P', 7, 6],
-  ['R', 0, 7], ['B', 2, 7], ['Q', 3, 7], ['K', 4, 7], ['B', 5, 7], ['R', 7, 7],
+  ['R', 0, 7], ['B', 2, 7], ['Q', 3, 7], ['B', 5, 7], ['R', 7, 7],
 ];
+const BLACK_KING: Square = [4, 7];
 
-/** A piece with somewhere to be. White faces +x, black -x. */
+/** White faces -x, black +x. PLIES index into this list. */
 const MOVERS: Array<{ kind: PieceKind; facing: 1 | -1; start: Square }> = [
-  { kind: 'P', facing: 1, start: [4, 1] },   // 0  e2 pawn
-  { kind: 'P', facing: -1, start: [4, 6] },  // 1  e7 pawn
-  { kind: 'B', facing: 1, start: [5, 0] },   // 2  f1 bishop
-  { kind: 'N', facing: -1, start: [1, 7] },  // 3  b8 knight
-  { kind: 'Q', facing: 1, start: [3, 0] },   // 4  d1 queen
-  { kind: 'N', facing: -1, start: [6, 7] },  // 5  g8 knight
-  { kind: 'P', facing: -1, start: [5, 6] },  // 6  f7 pawn — the one that pays
+  { kind: 'P', facing: 1, start: [4, 1] },
+  { kind: 'P', facing: -1, start: [4, 6] },
+  { kind: 'B', facing: 1, start: [5, 0] },
+  { kind: 'N', facing: -1, start: [1, 7] },
+  { kind: 'Q', facing: 1, start: [3, 0] },
+  { kind: 'N', facing: -1, start: [6, 7] },
+  { kind: 'P', facing: -1, start: [5, 6] },
 ];
 
-/** How high a piece rides between squares. A knight goes over, not through. */
 const SLIDE_LIFT = 0.5 * SQ;
 const HOP_LIFT = 1.5 * SQ;
 
@@ -92,18 +106,17 @@ interface Ply {
   mover: number;
   to: Square;
   lift: number;
-  /** The mover this ply takes off the board. */
   captures?: number;
 }
 
 const PLIES: Ply[] = [
-  { mover: 0, to: [4, 3], lift: SLIDE_LIFT },              // 1. e4
-  { mover: 1, to: [4, 4], lift: SLIDE_LIFT },              //    e5
-  { mover: 2, to: [2, 3], lift: SLIDE_LIFT },              // 2. Bc4
-  { mover: 3, to: [2, 5], lift: HOP_LIFT },                //    Nc6
-  { mover: 4, to: [7, 4], lift: SLIDE_LIFT },              // 3. Qh5
-  { mover: 5, to: [5, 5], lift: HOP_LIFT },                //    Nf6
-  { mover: 4, to: [5, 6], lift: SLIDE_LIFT, captures: 6 }, // 4. Qxf7#
+  { mover: 0, to: [4, 3], lift: SLIDE_LIFT },
+  { mover: 1, to: [4, 4], lift: SLIDE_LIFT },
+  { mover: 2, to: [2, 3], lift: SLIDE_LIFT },
+  { mover: 3, to: [2, 5], lift: HOP_LIFT },
+  { mover: 4, to: [7, 4], lift: SLIDE_LIFT },
+  { mover: 5, to: [5, 5], lift: HOP_LIFT },
+  { mover: 4, to: [5, 6], lift: SLIDE_LIFT, captures: 6 },
 ];
 
 const MOVES: Array<[string, string]> = [
@@ -113,258 +126,413 @@ const MOVES: Array<[string, string]> = [
   ['Qxf7#', ''],
 ];
 
-// ----------------------------------------------------------------- the timing
-//
-// A ply is think, then move: the piece sits while its owner decides and glides
-// at the end, which is the order a game actually happens in. The whole loop
-// comes to a little over twenty seconds — about as long as a passer-by will
-// stand at a table on their way somewhere.
 const DWELL = 1.05;
 const TRAVEL = 0.78;
 const PLY = DWELL + TRAVEL;
 const GAME = PLIES.length * PLY;
-/** How long the mate sits before the position is broken up. */
 const HOLD = 6.0;
 const RESET = 1.5;
-/** An empty beat on the starting position, so the first move reads as a move. */
 const SETTLE = 1.2;
 const CYCLE = GAME + HOLD + RESET + SETTLE;
+const TIP_DELAY = 0.55;
+const FALL = 0.5;
 
-// ---------------------------------------------------------------- the pieces
+/** Radius, height, and 1 where the turning has a hard edge. */
+type Ring = [number, number, 1?];
 
-/**
- * Revolve a profile. The path is authored in squares — radius against height —
- * and scaled on the way out, so the whole set rescales with SQ alone.
- */
-function turned(build: (p: Path) => void, segments: number): BufferGeometry {
-  const path = new Path();
-  build(path);
-  return new LatheGeometry(
-    path.getPoints(5).map((v) => v.multiplyScalar(SQ)),
-    segments,
-  );
+function turn(profile: Ring[], segments: number, scale = 1): BufferGeometry {
+  const position: number[] = [];
+  const normal: number[] = [];
+  const index: number[] = [];
+  const n = profile.length;
+
+  const slopes: Array<[number, number]> = [];
+  for (let j = 0; j < n - 1; j++) {
+    const dr = profile[j + 1][0] - profile[j][0];
+    const dy = profile[j + 1][1] - profile[j][1];
+    const len = Math.hypot(dr, dy) || 1;
+    slopes.push([dy / len, -dr / len]);
+  }
+
+  const ring = (j: number, nr: number, ny: number): number => {
+    const start = position.length / 3;
+    const [r, y] = profile[j];
+    for (let s = 0; s < segments; s++) {
+      const a = (s / segments) * Math.PI * 2;
+      position.push(r * Math.sin(a) * scale, y * scale, r * Math.cos(a) * scale);
+      normal.push(nr * Math.sin(a), ny, nr * Math.cos(a));
+    }
+    return start;
+  };
+
+  let below = -1;
+  for (let j = 0; j < n; j++) {
+    const into = j > 0 ? slopes[j - 1] : null;
+    const out = j < n - 1 ? slopes[j] : null;
+    let arrive = -1;
+    let leave = -1;
+    if (into && out && !profile[j][2]) {
+      const nr = into[0] + out[0];
+      const ny = into[1] + out[1];
+      const len = Math.hypot(nr, ny) || 1;
+      arrive = leave = ring(j, nr / len, ny / len);
+    } else {
+      if (into) arrive = ring(j, into[0], into[1]);
+      if (out) leave = ring(j, out[0], out[1]);
+    }
+    if (j > 0) {
+      for (let s = 0; s < segments; s++) {
+        const next = (s + 1) % segments;
+        if (profile[j - 1][0] > 1e-6) index.push(below + s, below + next, arrive + s);
+        if (profile[j][0] > 1e-6) index.push(below + next, arrive + next, arrive + s);
+      }
+    }
+    below = leave;
+  }
+
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(position, 3));
+  g.setAttribute('normal', new Float32BufferAttribute(normal, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(new Float32Array((position.length / 3) * 2), 2));
+  g.setIndex(index);
+  return g;
 }
 
-/** The pad foot every piece shares, ending at (r · 0.54, 0.32). */
-function foot(p: Path, r: number): void {
-  p.moveTo(0.004, 0);
-  p.lineTo(r, 0);
-  p.lineTo(r, 0.10);
-  p.quadraticCurveTo(r, 0.17, r * 0.80, 0.20);
-  p.quadraticCurveTo(r * 0.62, 0.24, r * 0.54, 0.32);
+function ball(cy: number, r: number, neck: number, steps: number): Ring[] {
+  const a0 = -Math.acos(Math.min(1, neck / r));
+  const out: Ring[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (Math.PI / 2 - a0) * (i / steps);
+    out.push([i === steps ? 0 : r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  out[0][2] = 1;
+  return out;
 }
 
-/** A ball finial, tangent to the neck it grows out of rather than floating above it. */
-function finial(p: Path, neckR: number, neckY: number, r: number): void {
-  const a0 = -Math.acos(Math.min(1, neckR / r));
-  p.absarc(0, neckY - r * Math.sin(a0), r, a0, Math.PI / 2, false);
+function plinth(r: number): Ring[] {
+  return [
+    [r * 0.78, 0.03],
+    [r * 0.97, 0.03, 1],
+    [r, 0.055],
+    [r, 0.115, 1],
+    [r * 0.93, 0.14, 1],
+    [r * 0.935, 0.165],
+    [r * 0.9, 0.205],
+    [r * 0.8, 0.25],
+    [r * 0.68, 0.285],
+    [r * 0.585, 0.32],
+  ];
 }
 
-/** A ring of coronet points around the queen's cup. */
-function coronet(count: number, radius: number, y: number, r: number): BufferGeometry[] {
+const BASE: Record<PieceKind, number> = { P: 0.31, R: 0.36, N: 0.37, B: 0.35, Q: 0.4, K: 0.4 };
+const AROUND: Record<PieceKind, number> = { P: 12, R: 14, N: 14, B: 14, Q: 14, K: 14 };
+
+const PAWN: Ring[] = [
+  ...plinth(BASE.P),
+  [0.165, 0.36], [0.132, 0.42], [0.115, 0.49], [0.11, 0.535, 1],
+  [0.18, 0.555, 1], [0.19, 0.572], [0.18, 0.59, 1], [0.118, 0.61, 1],
+  ...ball(0.755, 0.168, 0.118, 7),
+];
+
+const ROOK: Ring[] = [
+  ...plinth(BASE.R),
+  [0.195, 0.38], [0.185, 0.5], [0.18, 0.62, 1],
+  [0.24, 0.645, 1], [0.25, 0.662], [0.24, 0.68, 1], [0.19, 0.7, 1],
+  [0.2, 0.73], [0.245, 0.785], [0.272, 0.81, 1], [0.272, 0.93, 1],
+  [0.205, 0.93, 1], [0.205, 0.875, 1], [0, 0.875],
+];
+
+const BISHOP: Ring[] = [
+  ...plinth(BASE.B),
+  [0.17, 0.39], [0.142, 0.5], [0.128, 0.62], [0.122, 0.7, 1],
+  [0.2, 0.72, 1], [0.21, 0.738], [0.2, 0.756, 1], [0.135, 0.775, 1],
+  [0.165, 0.79, 1], [0.165, 0.805, 1], [0.13, 0.82, 1],
+  [0.165, 0.86], [0.2, 0.93], [0.205, 0.99], [0.185, 1.07], [0.14, 1.15], [0.085, 1.215], [0.05, 1.245, 1],
+  ...ball(1.295, 0.07, 0.05, 5),
+];
+
+const QUEEN: Ring[] = [
+  ...plinth(BASE.Q),
+  [0.19, 0.4], [0.158, 0.58], [0.142, 0.78], [0.136, 0.93, 1],
+  [0.215, 0.95, 1], [0.225, 0.97], [0.215, 0.99, 1], [0.15, 1.01, 1],
+  [0.18, 1.025, 1], [0.18, 1.04, 1], [0.145, 1.055, 1],
+  [0.155, 1.11], [0.19, 1.19], [0.235, 1.28], [0.262, 1.34, 1], [0.225, 1.34, 1], [0.2, 1.29, 1],
+  [0.16, 1.325], [0.1, 1.365], [0.05, 1.38, 1],
+  ...ball(1.435, 0.075, 0.05, 5),
+];
+
+const KING: Ring[] = [
+  ...plinth(BASE.K),
+  [0.195, 0.4], [0.165, 0.58], [0.15, 0.8], [0.144, 0.99, 1],
+  [0.22, 1.01, 1], [0.23, 1.03], [0.22, 1.05, 1], [0.155, 1.07, 1],
+  [0.185, 1.085, 1], [0.185, 1.1, 1], [0.15, 1.115, 1],
+  [0.16, 1.17], [0.195, 1.25], [0.24, 1.34], [0.268, 1.4, 1], [0.24, 1.415],
+  [0.19, 1.45], [0.12, 1.485], [0.06, 1.5, 1], [0.06, 1.53, 1],
+  [0.085, 1.54, 1], [0.085, 1.56, 1], [0, 1.56],
+];
+
+const KNIGHT: Ring[] = [
+  ...plinth(BASE.N),
+  [0.2, 0.345], [0.205, 0.365, 1],
+  [0.25, 0.375, 1], [0.26, 0.39], [0.25, 0.405, 1], [0.215, 0.415, 1], [0, 0.415],
+];
+
+const TURNINGS: Record<PieceKind, Ring[]> = { P: PAWN, R: ROOK, N: KNIGHT, B: BISHOP, Q: QUEEN, K: KING };
+
+class Soup {
+  private readonly p: number[] = [];
+
+  face(corners: Vector3[], outward: Vector3): void {
+    const n = new Vector3()
+      .subVectors(corners[1], corners[0])
+      .cross(new Vector3().subVectors(corners[2], corners[0]));
+    const c = n.dot(outward) < 0 ? [...corners].reverse() : corners;
+    for (let i = 1; i < c.length - 1; i++) {
+      for (const v of [c[0], c[i], c[i + 1]]) this.p.push(v.x, v.y, v.z);
+    }
+  }
+
+  build(): BufferGeometry {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(this.p, 3));
+    g.setAttribute('uv', new Float32BufferAttribute(new Float32Array((this.p.length / 3) * 2), 2));
+    g.computeVertexNormals();
+    return g;
+  }
+}
+
+function merlons(): BufferGeometry {
+  const soup = new Soup();
+  const COUNT = 6;
+  const R0 = 0.205;
+  const R1 = 0.272;
+  const Y0 = 0.93;
+  const Y1 = 1.02;
+  const at = (r: number, y: number, a: number) => new Vector3(r * Math.sin(a), y, r * Math.cos(a));
+  for (let k = 0; k < COUNT; k++) {
+    const a0 = ((k + 0.18) / COUNT) * Math.PI * 2;
+    const a1 = ((k + 0.82) / COUNT) * Math.PI * 2;
+    const STEPS = 2;
+    for (let s = 0; s < STEPS; s++) {
+      const b0 = a0 + ((a1 - a0) * s) / STEPS;
+      const b1 = a0 + ((a1 - a0) * (s + 1)) / STEPS;
+      const out = at(1, 0, (b0 + b1) / 2);
+      soup.face([at(R1, Y0, b0), at(R1, Y0, b1), at(R1, Y1, b1), at(R1, Y1, b0)], out);
+      soup.face([at(R0, Y0, b0), at(R0, Y0, b1), at(R0, Y1, b1), at(R0, Y1, b0)], out.clone().negate());
+      soup.face([at(R0, Y1, b0), at(R1, Y1, b0), at(R1, Y1, b1), at(R0, Y1, b1)], new Vector3(0, 1, 0));
+    }
+    const side0 = new Vector3(-Math.cos(a0), 0, Math.sin(a0));
+    const side1 = new Vector3(Math.cos(a1), 0, -Math.sin(a1));
+    soup.face([at(R0, Y0, a0), at(R1, Y0, a0), at(R1, Y1, a0), at(R0, Y1, a0)], side0);
+    soup.face([at(R0, Y0, a1), at(R1, Y0, a1), at(R1, Y1, a1), at(R0, Y1, a1)], side1);
+  }
+  return soup.build().scale(SQ, SQ, SQ);
+}
+
+function radiusAt(profile: Ring[], y: number, from: number): number {
+  for (let j = 0; j < profile.length - 1; j++) {
+    const [r0, y0] = profile[j];
+    const [r1, y1] = profile[j + 1];
+    if (y0 >= from && y1 > y0 && y >= y0 && y <= y1) return r0 + ((r1 - r0) * (y - y0)) / (y1 - y0);
+  }
+  return 0;
+}
+
+function mitreCut(): BufferGeometry {
+  const N = 10;
+  const position: number[] = [];
+  const normal: number[] = [];
+  const index: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const phi = -Math.PI / 2 + (Math.PI * i) / N;
+    let y = 0.98;
+    for (let k = 0; k < 5; k++) y = 0.98 + 0.75 * radiusAt(BISHOP, y, 0.82) * Math.cos(phi);
+    const a = Math.PI + phi;
+    const half = 0.004 + 0.012 * Math.cos(phi);
+    for (const dy of [-half, half]) {
+      const r = radiusAt(BISHOP, y + dy, 0.82) * 1.03;
+      position.push(r * Math.sin(a) * SQ, (y + dy) * SQ, r * Math.cos(a) * SQ);
+      normal.push(Math.sin(a) * 0.97, 0.24, Math.cos(a) * 0.97);
+    }
+    if (i < N) index.push(2 * i, 2 * i + 2, 2 * i + 1, 2 * i + 2, 2 * i + 3, 2 * i + 1);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(position, 3));
+  g.setAttribute('normal', new Float32BufferAttribute(normal, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(new Float32Array((position.length / 3) * 2), 2));
+  g.setIndex(index);
+  return g;
+}
+
+function coronet(): BufferGeometry[] {
   const out: BufferGeometry[] = [];
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * Math.PI * 2;
-    const point = new SphereGeometry(r * SQ, 8, 6);
-    point.translate(Math.cos(a) * radius * SQ, y * SQ, Math.sin(a) * radius * SQ);
-    out.push(point);
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    out.push(
+      new SphereGeometry(0.037 * SQ, 5, 3).translate(Math.sin(a) * 0.244 * SQ, 1.348 * SQ, Math.cos(a) * 0.244 * SQ),
+    );
   }
   return out;
 }
 
-/**
- * The knight's head, as a side profile extruded across the piece's width.
- *
- * A revolved knight is a traffic cone and a boxed knight is a robot; the only
- * honest way to get the silhouette is to draw it. Authored facing +x and turned
- * so the finished head looks down -z, which is what sideGeometry expects.
- */
-function knightHead(): BufferGeometry {
+function kingCross(): BufferGeometry {
   const s = new Shape();
-  s.moveTo(0.12, -0.05);
-  s.lineTo(0.105, 0.10);
-  s.quadraticCurveTo(0.135, 0.245, 0.215, 0.30);
-  s.quadraticCurveTo(0.295, 0.335, 0.325, 0.385);
-  s.lineTo(0.328, 0.45);
-  s.quadraticCurveTo(0.295, 0.50, 0.235, 0.535);
-  s.quadraticCurveTo(0.165, 0.575, 0.115, 0.625);
-  s.lineTo(0.03, 0.635);
-  s.lineTo(0.06, 0.76);
-  s.lineTo(-0.03, 0.685);
-  s.quadraticCurveTo(-0.10, 0.63, -0.135, 0.48);
-  s.quadraticCurveTo(-0.175, 0.28, -0.145, 0.10);
-  s.lineTo(-0.13, -0.05);
+  const outline: Point[] = [
+    [0.028, 0.028], [0.1, 0.05], [0.1, -0.05], [0.028, -0.028],
+    [0.045, -0.15], [-0.045, -0.15], [-0.028, -0.028],
+    [-0.1, -0.05], [-0.1, 0.05], [-0.028, 0.028],
+    [-0.05, 0.11], [0.05, 0.11],
+  ];
+  outline.forEach(([x, y], i) => (i === 0 ? s.moveTo(x, y) : s.lineTo(x, y)));
   s.closePath();
-
-  const head = new ExtrudeGeometry(s, {
-    depth: 0.26,
+  const g = new ExtrudeGeometry(s, {
+    depth: 0.03,
     bevelEnabled: true,
-    bevelThickness: 0.026,
-    bevelSize: 0.022,
-    bevelSegments: 2,
-    steps: 1,
-    curveSegments: 6,
+    bevelThickness: 0.01,
+    bevelSize: 0.008,
+    bevelSegments: 1,
   });
-  head.translate(0, 0.45, -0.13);
-  head.rotateY(Math.PI / 2);
-  head.scale(SQ, SQ, SQ);
-  // Extrusions come back non-indexed. Weld here rather than letting merge()
-  // flatten the batch: everything else in a piece is a lathe, and staying
-  // indexed is worth far more than the one geometry it costs to weld.
-  return mergeVertices(head, 1e-6);
+  return g.translate(0, 1.7, -0.015).scale(SQ, SQ, SQ);
 }
 
-function pieceGeometry(kind: PieceKind): BufferGeometry[] {
-  switch (kind) {
-    case 'P':
-      return [
-        turned((p) => {
-          foot(p, 0.32);
-          p.quadraticCurveTo(0.135, 0.38, 0.118, 0.47);
-          p.lineTo(0.152, 0.505);
-          p.lineTo(0.152, 0.525);
-          p.lineTo(0.112, 0.56);
-          finial(p, 0.112, 0.56, 0.188);
-        }, 14),
-      ];
+/**
+ * Stations up the neck and down the face: centre, the bearing of the mane/forehead
+ * side in degrees, depth across the silhouette, half width. Authored looking +x.
+ */
+const HORSE: Array<[number, number, number, number, number]> = [
+  [-0.005, 0.4, 180, 0.41, 0.17],
+  [0.005, 0.53, 177, 0.47, 0.18],
+  [0.0, 0.66, 170, 0.45, 0.17],
+  [-0.02, 0.78, 160, 0.38, 0.155],
+  [-0.03, 0.89, 145, 0.31, 0.14],
+  [-0.02, 0.98, 122, 0.27, 0.13],
+  [0.02, 1.03, 95, 0.26, 0.128],
+  [0.09, 1.015, 68, 0.27, 0.125],
+  [0.155, 0.955, 50, 0.27, 0.12],
+  [0.21, 0.885, 42, 0.235, 0.108],
+  [0.26, 0.82, 40, 0.195, 0.094],
+  [0.305, 0.76, 40, 0.168, 0.086],
+  [0.34, 0.715, 40, 0.158, 0.086],
+  [0.362, 0.688, 40, 0.11, 0.064],
+];
 
-    case 'R': {
-      const parts: BufferGeometry[] = [
-        turned((p) => {
-          foot(p, 0.37);
-          p.quadraticCurveTo(0.185, 0.44, 0.180, 0.64);
-          p.lineTo(0.208, 0.69);
-          p.lineTo(0.268, 0.77);
-          p.lineTo(0.268, 0.88);
-          p.lineTo(0.230, 0.91);
-          p.lineTo(0, 0.91);
-        }, 16),
-      ];
-      for (let i = 0; i < 4; i++) {
-        const merlon = new BoxGeometry(0.22 * SQ, 0.12 * SQ, 0.11 * SQ);
-        merlon.translate(0, 0.97 * SQ, 0.20 * SQ);
-        merlon.rotateY((i / 4) * Math.PI * 2 + Math.PI / 4);
-        parts.push(merlon);
-      }
-      return parts;
-    }
+function horseAt(s: number): { c: Vector3; b: Vector3; depth: number; width: number } {
+  const i = Math.min(HORSE.length - 2, Math.floor(s));
+  const f = s - i;
+  const mix = (k: number) => HORSE[i][k] + (HORSE[i + 1][k] - HORSE[i][k]) * f;
+  const beta = (mix(2) * Math.PI) / 180;
+  return {
+    c: new Vector3(mix(0), mix(1), 0),
+    b: new Vector3(Math.cos(beta), Math.sin(beta), 0),
+    depth: mix(3),
+    width: mix(4),
+  };
+}
 
-    case 'N':
-      return [
-        turned((p) => {
-          foot(p, 0.37);
-          p.lineTo(0.188, 0.40);
-          p.lineTo(0.175, 0.45);
-          p.lineTo(0, 0.45);
-        }, 14),
-        knightHead(),
-      ];
+function knightHead(): BufferGeometry[] {
+  const AROUND_HEAD = 12;
+  const position: number[] = [];
+  const index: number[] = [];
+  const last = HORSE.length - 1;
 
-    case 'B':
-      return [
-        turned((p) => {
-          foot(p, 0.36);
-          p.quadraticCurveTo(0.163, 0.42, 0.134, 0.58);
-          p.lineTo(0.174, 0.64);
-          p.lineTo(0.174, 0.66);
-          p.lineTo(0.144, 0.70);
-          p.quadraticCurveTo(0.216, 0.79, 0.186, 0.95);
-          p.quadraticCurveTo(0.158, 1.06, 0.074, 1.15);
-          p.lineTo(0.052, 1.19);
-          finial(p, 0.052, 1.19, 0.084);
-        }, 16),
-      ];
-
-    case 'Q':
-      return [
-        turned((p) => {
-          foot(p, 0.40);
-          p.quadraticCurveTo(0.182, 0.52, 0.150, 0.82);
-          p.lineTo(0.196, 0.89);
-          p.lineTo(0.196, 0.91);
-          p.lineTo(0.156, 0.95);
-          p.quadraticCurveTo(0.272, 1.08, 0.268, 1.26);
-          p.lineTo(0.228, 1.26);
-          p.quadraticCurveTo(0.205, 1.12, 0.108, 1.07);
-          p.lineTo(0.050, 1.07);
-          p.lineTo(0.050, 1.30);
-          finial(p, 0.050, 1.30, 0.096);
-        }, 18),
-        ...coronet(8, 0.248, 1.27, 0.038),
-      ];
-
-    case 'K': {
-      const cross = new BoxGeometry(0.058 * SQ, 0.30 * SQ, 0.058 * SQ);
-      cross.translate(0, 1.655 * SQ, 0);
-      const bar = new BoxGeometry(0.19 * SQ, 0.058 * SQ, 0.058 * SQ);
-      bar.translate(0, 1.630 * SQ, 0);
-      return [
-        turned((p) => {
-          foot(p, 0.40);
-          p.quadraticCurveTo(0.186, 0.56, 0.156, 0.90);
-          p.lineTo(0.202, 0.97);
-          p.lineTo(0.202, 0.99);
-          p.lineTo(0.162, 1.03);
-          p.quadraticCurveTo(0.276, 1.16, 0.272, 1.34);
-          p.lineTo(0.232, 1.34);
-          p.quadraticCurveTo(0.210, 1.20, 0.110, 1.15);
-          p.lineTo(0.052, 1.15);
-          p.lineTo(0.052, 1.38);
-          finial(p, 0.052, 1.38, 0.082);
-        }, 18),
-        cross,
-        bar,
-      ];
+  for (let i = 0; i <= last; i++) {
+    const { c, b, depth, width } = horseAt(i);
+    for (let k = 0; k < AROUND_HEAD; k++) {
+      const phi = (k / AROUND_HEAD) * Math.PI * 2;
+      const u = Math.cos(phi);
+      const narrow = 1 - 0.42 * Math.pow(0.5 + 0.5 * u, 1.6);
+      position.push(
+        c.x + b.x * (depth / 2) * u,
+        c.y + b.y * (depth / 2) * u,
+        width * Math.sin(phi) * narrow,
+      );
     }
   }
+  const tip = position.length / 3;
+  position.push(0.378, 0.668, 0);
+
+  for (let i = 0; i < last; i++) {
+    for (let k = 0; k < AROUND_HEAD; k++) {
+      const a = i * AROUND_HEAD + k;
+      const b = i * AROUND_HEAD + ((k + 1) % AROUND_HEAD);
+      index.push(a, b, a + AROUND_HEAD, b, b + AROUND_HEAD, a + AROUND_HEAD);
+    }
+  }
+  for (let k = 0; k < AROUND_HEAD; k++) {
+    index.push(last * AROUND_HEAD + k, last * AROUND_HEAD + ((k + 1) % AROUND_HEAD), tip);
+  }
+
+  const head = new BufferGeometry();
+  head.setAttribute('position', new Float32BufferAttribute(position, 3));
+  head.setAttribute('uv', new Float32BufferAttribute(new Float32Array((position.length / 3) * 2), 2));
+  head.setIndex(index);
+  head.computeVertexNormals();
+
+  const mane = new Soup();
+  const crest: Array<{ left: Vector3; right: Vector3; top: Vector3; out: Vector3 }> = [];
+  const FROM = 1;
+  const TO = 6;
+  const SAMPLES = (TO - FROM) * 2;
+  for (let j = 0; j <= SAMPLES; j++) {
+    const { c, b, depth } = horseAt(FROM + j / 2);
+    const root = c.clone().addScaledVector(b, depth / 2 - 0.035);
+    const lock = j === 0 || j === SAMPLES ? 0 : j % 2 === 1 ? 0.062 : 0.022;
+    crest.push({
+      left: root.clone().setZ(0.04),
+      right: root.clone().setZ(-0.04),
+      top: c.clone().addScaledVector(b, depth / 2 + lock),
+      out: b,
+    });
+  }
+  for (let j = 0; j < SAMPLES; j++) {
+    const p = crest[j];
+    const q = crest[j + 1];
+    mane.face([p.left, q.left, q.top, p.top], p.out.clone().setZ(1.4));
+    mane.face([p.right, q.right, q.top, p.top], p.out.clone().setZ(-1.4));
+  }
+
+  const parts: BufferGeometry[] = [head, mane.build()];
+
+  for (const side of [-1, 1]) {
+    const ear = new ConeGeometry(0.042, 0.15, 5, 1);
+    ear.translate(0, 0.075, 0).rotateZ(-0.3).rotateX(side * 0.22);
+    parts.push(ear.translate(0.018, 1.095, side * 0.056));
+    parts.push(new SphereGeometry(0.024, 6, 4).translate(0.172, 0.99, side * 0.084));
+    const cheek = new SphereGeometry(0.075, 6, 4).scale(1, 1.1, 0.34);
+    parts.push(cheek.translate(0.105, 0.925, side * 0.092));
+  }
+
+  return parts.map((g) => g.rotateY(Math.PI / 2).scale(SQ, SQ, SQ));
 }
 
-/**
- * Files run along z, ranks along x: white sits at +x looking down the board,
- * so a1 — white's near-left, and a dark square — lands at (+3.5, +3.5) squares.
- */
+/** A piece standing at the origin, looking down -z. */
+function piece(kind: PieceKind, wood: HyperMaterialOptions): Part[] {
+  const around = AROUND[kind];
+  const pad = BASE[kind] * 0.9;
+  const parts: Part[] = [
+    [turn(TURNINGS[kind], around, SQ), wood],
+    [turn([[0, 0], [pad, 0, 1], [pad, 0.03]], around, SQ), FELT],
+  ];
+  if (kind === 'R') parts.push([merlons(), wood]);
+  if (kind === 'B') parts.push([mitreCut(), CUT]);
+  if (kind === 'Q') for (const g of coronet()) parts.push([g, wood]);
+  if (kind === 'K') parts.push([kingCross(), wood]);
+  if (kind === 'N') for (const g of knightHead()) parts.push([g, wood]);
+  return parts;
+}
+
+/** Files run along z, ranks along x: white sits at +x, so a1 lands at (+3.5, +3.5) squares. */
 function square(file: number, rank: number): [number, number] {
   return [(3.5 - rank) * SQ, (3.5 - file) * SQ];
 }
 
-/**
- * How far off true a piece stands on a given square: enough that the set reads
- * as played rather than laid out by machine, small enough that nothing leaves
- * its square. Keyed on the square, not the piece, so a man who moves picks up
- * the sloppiness of wherever he lands and lands the same way every loop.
- */
 function jitter(file: number, rank: number): [number, number, number] {
   const n = file * 8 + rank;
   return [
-    (((n * 7919) % 97) / 97 - 0.5) * 0.06 * SQ,
-    (((n * 6271) % 89) / 89 - 0.5) * 0.06 * SQ,
+    (((n * 7919) % 97) / 97 - 0.5) * 0.035 * SQ,
+    (((n * 6271) % 89) / 89 - 0.5) * 0.035 * SQ,
     (((n * 5417) % 83) / 83 - 0.5) * 0.14,
   ];
-}
-
-/** Everything that stays put, in one buffer per side. */
-function sideGeometry(
-  pieces: Array<[PieceKind, number, number]>,
-  facing: 1 | -1,
-): BufferGeometry {
-  const parts: BufferGeometry[] = [];
-  for (const [kind, file, rank] of pieces) {
-    const [x, z] = square(file, rank);
-    const [jx, jz, jr] = jitter(file, rank);
-    for (const g of pieceGeometry(kind)) {
-      g.rotateY(facing * (Math.PI / 2) + jr);
-      g.translate(x + jx, BOARD_Y, z + jz);
-      parts.push(g);
-    }
-  }
-  return merge(parts);
-}
-
-/** One mover, about its own foot: the node carries square and jitter instead. */
-function moverGeometry(kind: PieceKind, facing: 1 | -1): BufferGeometry {
-  const parts = pieceGeometry(kind);
-  for (const g of parts) g.rotateY(facing * (Math.PI / 2));
-  return merge(parts);
 }
 
 interface Pose {
@@ -380,11 +548,7 @@ function restPose([file, rank]: Square): Pose {
   return { x: x + jx, y: BOARD_Y, z: z + jz, rot: jr };
 }
 
-/**
- * Where a taken man ends up: off the board, at the elbow of the player who
- * took him, standing rather than tipped — this is a friendly game.
- */
-const CAPTURED: Pose = { x: 0.345, y: TOP_Y + 0.002, z: 0.145, rot: -0.42 };
+const CAPTURED: Pose = { x: 0.33, y: TOP_Y, z: 0.1, rot: -0.42 };
 
 function glide(a: Pose, b: Pose, u: number, lift: number): Pose {
   const s = u * u * (3 - 2 * u);
@@ -396,16 +560,53 @@ function glide(a: Pose, b: Pose, u: number, lift: number): Pose {
   };
 }
 
-// -------------------------------------------------------------------- canvas
-
 /**
- * Board colours run brighter than they read.
- *
- * The renderer never re-encodes: an sRGB texture is linearised on sample and
- * written out raw, which leaves highlights nearly intact and crushes mid tones
- * hard. A walnut that measures right on the canvas comes out near black on the
- * table, so the dark squares are painted a full stop and a half light.
+ * A turned piece tipping over on a flat board without sliding: for each tilt,
+ * how far its foot has to rise and travel so that the lowest ring of the
+ * profile is the one touching. Ends where the crown comes down.
  */
+function fallTable(hull: Ring[]): { end: number; at: (theta: number) => { lift: number; slide: number } } {
+  const STEP = 0.002;
+  const lift = [0];
+  const slide = [0];
+  const lowest = (theta: number): number => {
+    let best = 0;
+    let h = Infinity;
+    hull.forEach(([r, y], i) => {
+      const v = y * Math.cos(theta) - r * Math.sin(theta);
+      if (v < h) {
+        h = v;
+        best = i;
+      }
+    });
+    return best;
+  };
+
+  let theta = 0;
+  while (theta < 2) {
+    const [r, y] = hull[lowest(theta + STEP)];
+    if (y > 0.7) break;
+    const along = (a: number) => r * Math.cos(a) + y * Math.sin(a);
+    slide.push(slide[slide.length - 1] + along(theta) - along(theta + STEP));
+    theta += STEP;
+    lift.push(r * Math.sin(theta) - y * Math.cos(theta));
+  }
+
+  return {
+    end: theta,
+    at: (a: number) => {
+      const f = Math.min(Math.max(a, 0), theta) / STEP;
+      const i = Math.min(lift.length - 2, Math.floor(f));
+      const k = f - i;
+      return {
+        lift: lift[i] + (lift[i + 1] - lift[i]) * k,
+        slide: slide[i] + (slide[i + 1] - slide[i]) * k,
+      };
+    },
+  };
+}
+
+// The renderer writes linearised texels out raw, which crushes mid tones: the dark squares are painted a stop and a half light.
 function boardTexture(): Texture {
   const FILES = 'abcdefgh';
   return localizedCanvasTexture(1024, 1024, (ctx, size) => {
@@ -414,7 +615,6 @@ function boardTexture(): Texture {
 
     ctx.fillStyle = '#b98d63';
     ctx.fillRect(0, 0, size, size);
-    // Grain along the border, drawn under everything and then covered.
     ctx.strokeStyle = '#a87f57';
     ctx.lineWidth = 2;
     for (let y = 0; y < size; y += 7) {
@@ -426,14 +626,27 @@ function boardTexture(): Texture {
 
     for (let f = 0; f < 8; f++) {
       for (let i = 0; i < 8; i++) {
-        ctx.fillStyle = (f + i) % 2 === 1 ? '#c8a677' : '#f7f0de';
-        ctx.fillRect(m + f * cell, m + i * cell, cell, cell);
+        const dark = (f + i) % 2 === 1;
+        const x = m + f * cell;
+        const y = m + i * cell;
+        ctx.fillStyle = dark ? '#c8a677' : '#f7f0de';
+        ctx.fillRect(x, y, cell, cell);
+        ctx.strokeStyle = '#c19f70';
+        ctx.lineWidth = 1.5;
+        for (let k = 1; dark && k < 9; k++) {
+          const gy = y + (k * cell) / 9 + Math.sin(f * 3.1 + i * 1.7 + k) * 2;
+          ctx.beginPath();
+          ctx.moveTo(x, gy);
+          ctx.bezierCurveTo(x + cell * 0.3, gy + 3, x + cell * 0.7, gy - 3, x + cell, gy + 1);
+          ctx.stroke();
+        }
       }
     }
 
     ctx.strokeStyle = '#8d6a49';
     ctx.lineWidth = 3;
     ctx.strokeRect(m - 4, m - 4, size - 2 * m + 8, size - 2 * m + 8);
+    ctx.strokeRect(5, 5, size - 10, size - 10);
 
     ctx.fillStyle = '#7a5535';
     ctx.font = `600 ${Math.round(m * 0.52)}px ${MONO}`;
@@ -441,9 +654,7 @@ function boardTexture(): Texture {
     ctx.textBaseline = 'middle';
     for (let i = 0; i < 8; i++) {
       const along = m + (i + 0.5) * cell;
-      // Each coordinate twice, the far pair upside down, so both players read
-      // their own edge the right way up. That turn also carries the slot to the
-      // opposite end of its edge, so the far pair has to count back from h8.
+      // Turning the far pair upside down also carries each slot to the other end of its edge, so that pair counts back from h8.
       for (const flip of [0, Math.PI]) {
         const j = flip === 0 ? i : 7 - i;
         ctx.save();
@@ -458,15 +669,16 @@ function boardTexture(): Texture {
   });
 }
 
-/** Rules, a header block and the moves in a hand that got quicker near the end. */
-function scoresheetTexture(forWhite: boolean): Texture {
+type Paint = (ctx: CanvasRenderingContext2D, w: number, h: number) => void;
+
+function paintScoresheet(forWhite: boolean): Paint {
   const HAND = '"Segoe Script", "Comic Sans MS", cursive';
   const WHITE_L: Localized = L('White', 'Beyaz');
   const BLACK_L: Localized = L('Black', 'Siyah');
   const ROUND_L: Localized = L('Private match · July 2024', 'Özel maç · Temmuz 2024');
   const RESULT_L: Localized = L('Result', 'Sonuç');
 
-  return localizedCanvasTexture(512, 730, (ctx, w, h) => {
+  return (ctx, w, h) => {
     ctx.fillStyle = '#fbf7ec';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#e6dfcd';
@@ -476,8 +688,17 @@ function scoresheetTexture(forWhite: boolean): Texture {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
+    const fit = (text: string, font: string, size: number, room: number) => {
+      let px = size;
+      do {
+        ctx.font = font.replace('SIZE', String(px));
+        if (ctx.measureText(text).width <= room) break;
+        px -= 1;
+      } while (px > 8);
+    };
+
     ctx.fillStyle = '#8b8272';
-    ctx.font = `400 20px ${MONO}`;
+    fit(upper(t(ROUND_L)), `400 SIZEpx ${MONO}`, 20, w - 2 * pad);
     ctx.fillText(upper(t(ROUND_L)), pad, 44);
 
     ctx.strokeStyle = '#cfc6b2';
@@ -497,7 +718,7 @@ function scoresheetTexture(forWhite: boolean): Texture {
     names.forEach(([label, name], i) => {
       const y = 100 + i * 40;
       ctx.fillStyle = '#8b8272';
-      ctx.font = `400 20px ${MONO}`;
+      fit(upper(t(label)), `400 SIZEpx ${MONO}`, 20, 96);
       ctx.fillText(upper(t(label)), pad, y);
       ctx.fillStyle = '#2a2f35';
       ctx.font = `26px ${HAND}`;
@@ -505,7 +726,6 @@ function scoresheetTexture(forWhite: boolean): Texture {
     });
     rule(160);
 
-    // Move column: ruled rows, number set in print, moves written in.
     const top = 196;
     const row = 62;
     ctx.lineWidth = 1.5;
@@ -538,13 +758,12 @@ function scoresheetTexture(forWhite: boolean): Texture {
 
     const resultY = top + MOVES.length * row + 54;
     ctx.fillStyle = '#8b8272';
-    ctx.font = `400 20px ${MONO}`;
+    fit(upper(t(RESULT_L)), `400 SIZEpx ${MONO}`, 20, 96);
     ctx.fillText(upper(t(RESULT_L)), pad, resultY);
     ctx.fillStyle = '#2a2f35';
     ctx.font = `34px ${HAND}`;
     ctx.fillText('1 – 0', pad + 110, resultY);
 
-    // The signature: white's neat, black's abandoned halfway.
     ctx.strokeStyle = '#2f3a48';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -561,83 +780,223 @@ function scoresheetTexture(forWhite: boolean): Texture {
     ctx.moveTo(pad, sy + 22);
     ctx.lineTo(w - pad, sy + 22);
     ctx.stroke();
-  });
+    ctx.fillStyle = '#e6dfcd';
+    ctx.fillRect(0, h - 6, w, 6);
+  };
 }
 
-/** Two analog dials in one face, both stopped, black's flag about to go. */
-function clockFaceTexture(): Texture {
-  return localizedCanvasTexture(768, 360, (ctx, w, h) => {
-    ctx.fillStyle = '#e9dcc0';
+function paintCard(name: string, colour: Localized, federation: string, chip: string): Paint {
+  return (ctx, w, h) => {
+    ctx.fillStyle = '#fbf8ef';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#d6c6a4';
-    ctx.fillRect(0, h - 26, w, 26);
+    ctx.fillStyle = '#3c4a3f';
+    ctx.fillRect(0, 0, w, 16);
+    ctx.fillStyle = '#d9d2c0';
+    ctx.fillRect(0, h - 8, w, 8);
 
-    // Minutes elapsed on each side; white pressed last, so black's is behind.
-    const dials: Array<[number, number]> = [
-      [w * 0.735, 27],
-      [w * 0.265, 24],
-    ];
-    for (const [cx, minutes] of dials) {
-      const cy = h * 0.46;
-      const r = h * 0.36;
+    const pad = 34;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#20262c';
+    ctx.letterSpacing = '6px';
+    let size = 112;
+    do {
+      ctx.font = `700 ${size}px ${MONO}`;
+      if (ctx.measureText(name).width <= w - 2 * pad) break;
+      size -= 4;
+    } while (size > 20);
+    ctx.fillText(name, w / 2, 100);
 
+    ctx.letterSpacing = '3px';
+    const line = `${upper(t(colour))} · ${federation}`;
+    size = 34;
+    do {
+      ctx.font = `500 ${size}px ${MONO}`;
+      if (ctx.measureText(line).width <= w - 2 * pad - 70) break;
+      size -= 2;
+    } while (size > 12);
+    const tw = ctx.measureText(line).width;
+    const y = 190;
+    const left = (w - tw - 52) / 2;
+    ctx.fillStyle = chip;
+    ctx.fillRect(left, y - 18, 36, 36);
+    ctx.strokeStyle = '#8c8474';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(left, y - 18, 36, 36);
+    ctx.fillStyle = '#5c655f';
+    ctx.textAlign = 'left';
+    ctx.fillText(line, left + 52, y + 2);
+  };
+}
+
+const SEGMENTS = [0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f];
+
+function paintDisplay(time: string, running: boolean): Paint {
+  return (ctx, w, h) => {
+    ctx.fillStyle = '#c6d1b4';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#a9b498';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, w - 6, h - 6);
+
+    const DW = 46;
+    const DH = 88;
+    const T = 11;
+    const top = (h - DH) / 2 + 6;
+
+    const bar = (x0: number, y0: number, x1: number, y1: number) => {
+      const horizontal = y0 === y1;
       ctx.beginPath();
-      ctx.arc(cx, cy, r + 14, 0, Math.PI * 2);
-      ctx.fillStyle = '#c9a463';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#fdf8ec';
-      ctx.fill();
-
-      ctx.strokeStyle = '#3a3f47';
-      for (let i = 0; i < 60; i++) {
-        const a = (i / 60) * Math.PI * 2;
-        const long = i % 5 === 0;
-        ctx.lineWidth = long ? 3.5 : 1.5;
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(a) * r * (long ? 0.80 : 0.87), cy + Math.sin(a) * r * (long ? 0.80 : 0.87));
-        ctx.lineTo(cx + Math.cos(a) * r * 0.94, cy + Math.sin(a) * r * 0.94);
-        ctx.stroke();
+      if (horizontal) {
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + T / 2, y0 - T / 2);
+        ctx.lineTo(x1 - T / 2, y0 - T / 2);
+        ctx.lineTo(x1, y0);
+        ctx.lineTo(x1 - T / 2, y0 + T / 2);
+        ctx.lineTo(x0 + T / 2, y0 + T / 2);
+      } else {
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + T / 2, y0 + T / 2);
+        ctx.lineTo(x0 + T / 2, y1 - T / 2);
+        ctx.lineTo(x0, y1);
+        ctx.lineTo(x0 - T / 2, y1 - T / 2);
+        ctx.lineTo(x0 - T / 2, y0 + T / 2);
       }
-
-      ctx.fillStyle = '#2b3038';
-      ctx.font = `600 ${Math.round(r * 0.26)}px ${MONO}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const [n, a] of [[12, -Math.PI / 2], [3, 0], [6, Math.PI / 2], [9, Math.PI]] as Array<[number, number]>) {
-        ctx.fillText(String(n), cx + Math.cos(a) * r * 0.65, cy + Math.sin(a) * r * 0.65);
-      }
-
-      // The flag: a red tab hanging at twelve, lifted by the minute hand.
-      ctx.fillStyle = '#c2452f';
-      ctx.fillRect(cx - r * 0.05, cy - r * 0.99, r * 0.10, r * 0.20);
-
-      const hand = (angle: number, len: number, width: number) => {
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(angle - Math.PI / 2);
-        ctx.fillStyle = '#23282f';
-        ctx.beginPath();
-        ctx.moveTo(-width, width * 1.2);
-        ctx.lineTo(0, -r * len);
-        ctx.lineTo(width, width * 1.2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      };
-      hand((minutes / 720) * Math.PI * 2, 0.48, r * 0.055);
-      hand((minutes / 60) * Math.PI * 2, 0.80, r * 0.038);
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * 0.05, 0, Math.PI * 2);
-      ctx.fillStyle = '#23282f';
+      ctx.closePath();
       ctx.fill();
+    };
+
+    const digit = (x: number, mask: number) => {
+      const l = x + T / 2;
+      const r = x + DW - T / 2;
+      const y0 = top + T / 2;
+      const y1 = top + DH / 2;
+      const y2 = top + DH - T / 2;
+      const G = 1.5;
+      const bars: Array<[number, number, number, number]> = [
+        [l + G, y0, r - G, y0],
+        [r, y0 + G, r, y1 - G],
+        [r, y1 + G, r, y2 - G],
+        [l + G, y2, r - G, y2],
+        [l, y1 + G, l, y2 - G],
+        [l, y0 + G, l, y1 - G],
+        [l + G, y1, r - G, y1],
+      ];
+      bars.forEach((b, i) => {
+        ctx.fillStyle = mask & (1 << i) ? '#27302a' : '#b9c4a7';
+        bar(...b);
+      });
+    };
+
+    let x = 44;
+    for (const ch of time) {
+      if (ch === ':') {
+        ctx.fillStyle = '#27302a';
+        ctx.fillRect(x + 2, top + DH * 0.3 - 6, 12, 12);
+        ctx.fillRect(x + 2, top + DH * 0.7 - 6, 12, 12);
+        x += 26;
+      } else {
+        digit(x, SEGMENTS[Number(ch)]);
+        x += DW + 12;
+      }
+    }
+
+    ctx.fillStyle = running ? '#27302a' : '#b9c4a7';
+    ctx.beginPath();
+    ctx.moveTo(20, 14);
+    ctx.lineTo(38, 23);
+    ctx.lineTo(20, 32);
+    ctx.closePath();
+    ctx.fill();
+  };
+}
+
+const paintTurkiye: Paint = (ctx, w, h) => {
+  ctx.fillStyle = '#ee2a35';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0.5 * h, 0.5 * h, 0.25 * h, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ee2a35';
+  ctx.beginPath();
+  ctx.arc(0.5625 * h, 0.5 * h, 0.2 * h, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = Math.PI + (i * Math.PI) / 5;
+    const r = (i % 2 === 0 ? 0.125 : 0.125 * 0.382) * h;
+    const x = 0.8208 * h + Math.cos(a) * r;
+    const y = 0.5 * h + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+};
+
+const paintNorway: Paint = (ctx, w, h) => {
+  const u = w / 22;
+  const v = h / 16;
+  ctx.fillStyle = '#dc2c46';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(6 * u, 0, 4 * u, h);
+  ctx.fillRect(0, 6 * v, w, 4 * v);
+  ctx.fillStyle = '#24449a';
+  ctx.fillRect(7 * u, 0, 2 * u, h);
+  ctx.fillRect(0, 7 * v, w, 2 * v);
+};
+
+type Region = [number, number, number, number];
+const ATLAS_W = 2048;
+const ATLAS_H = 1024;
+const AT_SHEET_WHITE: Region = [8, 8, 512, 730];
+const AT_SHEET_BLACK: Region = [536, 8, 512, 730];
+const AT_CARD_WHITE: Region = [1064, 8, 640, 240];
+const AT_CARD_BLACK: Region = [1064, 264, 640, 240];
+const AT_TIME_WHITE: Region = [1064, 520, 400, 144];
+const AT_TIME_BLACK: Region = [1064, 680, 400, 144];
+const AT_TURKIYE: Region = [1720, 8, 312, 208];
+const AT_NORWAY: Region = [1720, 232, 286, 208];
+
+function atlasTexture(): Texture {
+  const regions: Array<[Region, string, Paint]> = [
+    [AT_SHEET_WHITE, '#fbf7ec', paintScoresheet(true)],
+    [AT_SHEET_BLACK, '#fbf7ec', paintScoresheet(false)],
+    [AT_CARD_WHITE, '#fbf8ef', paintCard('ÖZCAN', L('White', 'Beyaz'), 'TUR', '#f6f1e2')],
+    [AT_CARD_BLACK, '#fbf8ef', paintCard('CARLSEN', L('Black', 'Siyah'), 'NOR', '#4a4038')],
+    [AT_TIME_WHITE, '#c6d1b4', paintDisplay('1:31:34', false)],
+    [AT_TIME_BLACK, '#c6d1b4', paintDisplay('1:28:07', true)],
+    [AT_TURKIYE, '#ee2a35', paintTurkiye],
+    [AT_NORWAY, '#dc2c46', paintNorway],
+  ];
+  return localizedCanvasTexture(ATLAS_W, ATLAS_H, (ctx) => {
+    ctx.fillStyle = '#fbf7ec';
+    ctx.fillRect(0, 0, ATLAS_W, ATLAS_H);
+    for (const [[x, y, w, h], bleed, paint] of regions) {
+      ctx.fillStyle = bleed;
+      ctx.fillRect(x - 8, y - 8, w + 16, h + 16);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
+      ctx.translate(x, y);
+      paint(ctx, w, h);
+      ctx.restore();
     }
   });
 }
 
-/** The result placard, in the register of a wall-mounted pairing sheet. */
+function mapped(g: BufferGeometry, [x, y, w, h]: Region): BufferGeometry {
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, (x + uv.getX(i) * w) / ATLAS_W, 1 - (y + (1 - uv.getY(i)) * h) / ATLAS_H);
+  }
+  return g;
+}
+
 function scoreboardTexture(): Texture {
   const NOTE: Localized = L("Scholar's mate · 4 moves", 'Çoban matı · 4 hamle');
 
@@ -683,7 +1042,12 @@ function scoreboardTexture(): Texture {
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#4c5a4d';
-    ctx.font = `500 44px ${MONO}`;
+    let size = 44;
+    do {
+      ctx.font = `500 ${size}px ${MONO}`;
+      if (ctx.measureText(t(NOTE)).width <= w - 2 * pad) break;
+      size -= 2;
+    } while (size > 16);
     ctx.fillText(t(NOTE), w / 2, 440);
 
     ctx.fillStyle = '#9c9484';
@@ -692,139 +1056,372 @@ function scoreboardTexture(): Texture {
   });
 }
 
-// ---------------------------------------------------------------- assemblies
-
-function tableLeg(): BufferGeometry {
-  const p = new Path();
-  p.moveTo(0.004, 0);
-  p.lineTo(0.032, 0);
-  p.lineTo(0.032, 0.022);
-  p.quadraticCurveTo(0.032, 0.048, 0.021, 0.058);
-  p.lineTo(0.020, 0.29);
-  p.quadraticCurveTo(0.036, 0.325, 0.032, 0.365);
-  p.lineTo(0.028, 0.392);
-  p.lineTo(0.033, 0.406);
-  p.lineTo(0.004, 0.406);
-  return new LatheGeometry(p.getPoints(4), 12);
+function dome(r: number, around = 6): BufferGeometry {
+  return new SphereGeometry(r, around, 1, 0, Math.PI * 2, 0, Math.PI / 2);
 }
 
-/**
- * A ladder-back side chair, facing -z. The back posts are raked, so anything
- * riding on them (rails, slats) has to be raked and offset by the same amount
- * or it floats off the frame.
- */
-function addChair(world: HyperWorld, object: HyperObject, node: Group): void {
-  const SEAT_Y = 0.28;
-  const RAKE = 0.13;
-  const POST_X = 0.145;
-  const POST_Z = 0.135;
-
-  const seat = new RoundedBoxGeometry(0.34, 0.032, 0.32, 2, 0.010);
-  seat.translate(0, SEAT_Y - 0.016, 0);
-  object.addGeometry(world.shared, seat, { color: WOOD, ambient: 0.55 }, node);
-
-  for (const [w, d, dx, dz] of [
-    [0.30, 0.020, 0, POST_Z],
-    [0.30, 0.020, 0, -POST_Z],
-    [0.020, 0.27, POST_X, 0],
-    [0.020, 0.27, -POST_X, 0],
-  ] as Array<[number, number, number, number]>) {
-    const rail = new RoundedBoxGeometry(w, 0.034, d, 2, 0.007);
-    rail.translate(dx, SEAT_Y - 0.050, dz);
-    object.addGeometry(world.shared, rail, { color: DARKWOOD, ambient: 0.5 }, node);
+function dais(): Part[] {
+  const w = DAIS.x1 - DAIS.x0;
+  const d = DAIS.z1 - DAIS.z0;
+  const cx = (DAIS.x0 + DAIS.x1) / 2;
+  const cz = (DAIS.z0 + DAIS.z1) / 2;
+  const H = FLOOR - 0.012;
+  const parts: Part[] = [
+    [pos(box(w, H, d, 0.004), cx, H / 2, cz), FASCIA],
+    [pos(new BoxGeometry(w - 0.02, 0.014, d - 0.02), cx, FLOOR - 0.007, cz), CARPET],
+  ];
+  for (const s of [-1, 1]) {
+    parts.push([pos(new BoxGeometry(w + 0.004, 0.017, 0.016), cx, FLOOR - 0.0075, cz + s * (d / 2 - 0.006)), STEEL]);
+    parts.push([pos(new BoxGeometry(0.016, 0.017, d + 0.004), cx + s * (w / 2 - 0.006), FLOOR - 0.0075, cz), STEEL]);
   }
+  const screws: Array<[number, number]> = [];
+  for (let i = 0; i < 6; i++) {
+    const x = DAIS.x0 + 0.12 + (i * (w - 0.24)) / 5;
+    screws.push([x, DAIS.z0 + 0.006], [x, DAIS.z1 - 0.006]);
+  }
+  for (let i = 0; i < 7; i++) {
+    const z = DAIS.z0 + 0.12 + (i * (d - 0.24)) / 6;
+    screws.push([DAIS.x0 + 0.006, z], [DAIS.x1 - 0.006, z]);
+  }
+  for (const [x, z] of screws) parts.push([pos(dome(0.004, 5), x, FLOOR + 0.0008, z), ENAMEL]);
+  return parts;
+}
 
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const h = SEAT_Y - 0.032;
-      const leg = new CylinderGeometry(0.021, 0.015, h, 8);
-      leg.translate(sx * POST_X, h / 2, sz * POST_Z);
-      object.addGeometry(world.shared, leg, { color: DARKWOOD, ambient: 0.48 }, node);
+function tableLeg(): Part[] {
+  const AROUND_LEG = 12;
+  return [
+    [turn([[0, 0], [0.023, 0, 1], [0.025, 0.004], [0.025, 0.013, 1], [0.019, 0.017, 1], [0, 0.017]], AROUND_LEG), BRASS],
+    [
+      grained(
+        turn([[0.017, 0.014], [0.026, 0.03], [0.029, 0.045], [0.026, 0.06], [0.02, 0.07, 1], [0.02, 0.08]], AROUND_LEG),
+        'y',
+      ),
+      MAHOGANY,
+    ],
+    [grained(pos(box(0.056, 0.06, 0.056, 0.005), 0, 0.105, 0), 'y'), MAHOGANY],
+    [
+      grained(
+        turn(
+          [
+            [0.02, 0.13], [0.02, 0.14, 1], [0.027, 0.146, 1], [0.027, 0.154, 1], [0.019, 0.16, 1],
+            [0.0175, 0.175], [0.021, 0.2], [0.0275, 0.235], [0.028, 0.255], [0.0245, 0.285],
+            [0.019, 0.305, 1], [0.026, 0.31, 1], [0.026, 0.318, 1], [0.02, 0.322, 1], [0.02, 0.335],
+          ],
+          AROUND_LEG,
+        ),
+        'y',
+      ),
+      MAHOGANY,
+    ],
+    [grained(pos(box(0.056, 0.086, 0.056, 0.005), 0, 0.37, 0), 'y'), MAHOGANY],
+  ];
+}
+
+function table(): Part[] {
+  const parts: Part[] = [];
+  const W = HALF_X * 2;
+  const D = HALF_Z * 2;
+  const rimY = TOP_Y + 0.002 - 0.018;
+
+  for (const s of [-1, 1]) {
+    parts.push([grained(pos(box(RIM, 0.036, D, 0.008), s * (HALF_X - RIM / 2), rimY, 0), 'z'), MAHOGANY]);
+    parts.push([
+      grained(pos(box(W - 2 * RIM + 0.006, 0.036, RIM, 0.008), 0, rimY, s * (HALF_Z - RIM / 2)), 'x'),
+      MAHOGANY,
+    ]);
+  }
+  parts.push([pos(new BoxGeometry(W - 2 * RIM + 0.012, 0.008, D - 2 * RIM + 0.012), 0, TOP_Y - 0.004, 0), BAIZE]);
+  parts.push([pos(new BoxGeometry(W - 2 * RIM + 0.012, 0.024, D - 2 * RIM + 0.012), 0, TOP_Y - 0.02, 0), MAHOGANY]);
+  parts.push([grained(pos(box(W - 0.024, 0.012, D - 0.024, 0.005), 0, TOP_Y - 0.04, 0), 'z'), MAHOGANY]);
+
+  const apronY = TOP_Y - 0.046 - 0.036;
+  for (const s of [-1, 1]) {
+    parts.push([grained(pos(box(0.02, 0.072, 2 * LEG_Z - 0.05, 0.004), s * LEG_X, apronY, 0), 'z'), MAHOGANY]);
+    parts.push([grained(pos(box(2 * LEG_X - 0.05, 0.072, 0.02, 0.004), 0, apronY, s * LEG_Z), 'x'), MAHOGANY]);
+    parts.push([
+      grained(pos(box(2 * LEG_X - 0.05, 0.03, 0.022, 0.006), 0, FLOOR + 0.105, s * LEG_Z), 'x'),
+      MAHOGANY,
+    ]);
+    for (const sz of [-1, 1]) parts.push(...moved(tableLeg(), s * LEG_X, FLOOR, sz * LEG_Z));
+  }
+  parts.push([grained(pos(box(0.022, 0.03, 2 * LEG_Z - 0.018, 0.006), 0, FLOOR + 0.105, 0), 'z'), MAHOGANY]);
+
+  parts.push([grained(pos(box(FACE + 0.014, 0.016, FACE + 0.014, 0.004), 0, TOP_Y + 0.008, 0), 'x'), BOARD_EDGE]);
+  return parts;
+}
+
+/** A side chair standing on y = 0, looking down -z. */
+function chair(): Part[] {
+  const parts: Part[] = [];
+  const HX = 0.142;
+  const RAKE = 0.197;
+  const postZ = (y: number) =>
+    (0.12 + ((y - 0.28) * 0.066) / 0.318 + 0.152 + ((y - 0.275) * 0.062) / 0.323) / 2;
+
+  const side: Point[] = [
+    [0.14, 0.004], [0.172, 0.004], [0.152, 0.275], [0.214, 0.598], [0.207, 0.606],
+    [0.193, 0.606], [0.186, 0.598], [0.12, 0.28], [0.12, 0.2],
+  ];
+  for (const s of [-1, 1]) {
+    parts.push([grained(pos(across(side, 0.026, 0.003), s * HX, 0, 0), 'y'), WALNUT]);
+
+    const leg = new RoundedBoxGeometry(0.03, 0.272, 0.03, 2, 0.004);
+    const p = leg.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const k = 0.72 + 0.28 * (p.getY(i) / 0.272 + 0.5);
+      p.setX(i, p.getX(i) * k);
+      p.setZ(i, p.getZ(i) * k);
     }
+    parts.push([grained(pos(leg, s * HX, 0.139, -0.125), 'y'), WALNUT]);
 
-    const h = 0.30;
-    const post = new CylinderGeometry(0.017, 0.021, h, 8);
-    post.translate(0, h / 2, 0);
-    post.rotateX(RAKE);
-    post.translate(sx * POST_X, SEAT_Y - 0.02, POST_Z);
-    object.addGeometry(world.shared, post, { color: DARKWOOD, ambient: 0.5 }, node);
+    parts.push([grained(pos(box(0.018, 0.055, 0.25, 0.004), s * HX, 0.2425, 0.006), 'z'), WALNUT]);
+    parts.push([grained(pos(box(0.014, 0.022, 0.27, 0.004), s * HX, 0.11, 0.012), 'z'), WALNUT]);
+
+    parts.push([pos(new CylinderGeometry(0.009, 0.009, 0.004, 8), s * HX, 0.002, -0.125), RUBBER]);
+    parts.push([pos(new CylinderGeometry(0.009, 0.009, 0.004, 8), s * HX, 0.002, 0.156), RUBBER]);
+
+    for (let i = 0; i < 7; i++) {
+      parts.push([pos(dome(0.0042).rotateZ(-s * (Math.PI / 2)), s * (HX + 0.009), 0.258, -0.1 + i * 0.033), BRASS]);
+    }
+  }
+  parts.push([grained(pos(box(2 * HX - 0.02, 0.055, 0.018, 0.004), 0, 0.2425, -0.125), 'x'), WALNUT]);
+  parts.push([grained(pos(box(2 * HX - 0.02, 0.055, 0.018, 0.004), 0, 0.2425, 0.137), 'x'), WALNUT]);
+  parts.push([grained(pos(box(2 * HX, 0.022, 0.014, 0.004), 0, 0.11, 0.0), 'x'), WALNUT]);
+  for (let i = 0; i < 9; i++) {
+    parts.push([pos(dome(0.0042).rotateX(-Math.PI / 2), -0.116 + i * 0.029, 0.258, -0.134), BRASS]);
   }
 
-  const railZ = (y: number) => POST_Z + (y - (SEAT_Y - 0.02)) * Math.tan(RAKE);
-  for (const [y, height] of [[0.375, 0.046], [0.458, 0.046], [0.545, 0.058]] as Array<[number, number]>) {
-    const slat = new RoundedBoxGeometry(0.325, height, 0.020, 2, 0.007);
-    slat.rotateX(RAKE);
-    slat.translate(0, y, railZ(y));
-    object.addGeometry(world.shared, slat, { color: WOOD, ambient: 0.53 }, node);
+  parts.push([pos(new RoundedBoxGeometry(0.3, 0.045, 0.27, 2, 0.021), 0, 0.2865, -0.018), LEATHER]);
+
+  const leaning = (g: BufferGeometry, y: number, forward = 0): BufferGeometry =>
+    g.rotateX(RAKE).translate(0, y, postZ(y) - forward);
+
+  parts.push([grained(leaning(box(2 * HX + 0.026, 0.052, 0.024, 0.009), 0.578), 'x'), WALNUT]);
+  parts.push([grained(leaning(box(2 * HX - 0.02, 0.03, 0.02, 0.005), 0.318), 'x'), WALNUT]);
+  parts.push([leaning(new RoundedBoxGeometry(0.25, 0.2, 0.034, 2, 0.016), 0.44, 0.004), LEATHER]);
+  const studs: Array<[number, number]> = [];
+  for (let i = 0; i < 7; i++) studs.push([-0.105 + i * 0.035, 0.085], [-0.105 + i * 0.035, -0.085]);
+  for (let i = 1; i < 4; i++) studs.push([-0.111, -0.085 + i * 0.0425], [0.111, -0.085 + i * 0.0425]);
+  for (const [x, y] of studs) {
+    parts.push([leaning(dome(0.0042).rotateX(-Math.PI / 2).translate(x, y, -0.017), 0.44, 0.004), BRASS]);
   }
+
+  return parts;
 }
 
-/** The analog clock: wooden case, one face, two plungers — white's is down. */
-function addClock(world: HyperWorld, object: HyperObject, node: Group): void {
-  const CASE_H = 0.15;
-  const CASE_D = 0.10;
+/** Tip a standing chair over backwards until its feet and the top of its back are both down on y = 0. */
+function laidOnItsBack(parts: Part[], split: number): Part[] {
+  const points: Array<[number, number, boolean]> = [];
+  for (const [g] of parts) {
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) points.push([p.getY(i), p.getZ(i), p.getY(i) > split]);
+  }
+  const lows = (theta: number): [number, number] => {
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    let feet = Infinity;
+    let back = Infinity;
+    for (const [y, z, upper] of points) {
+      const h = y * c - z * s;
+      if (upper) back = Math.min(back, h);
+      else feet = Math.min(feet, h);
+    }
+    return [feet, back];
+  };
+  let a = 1.2;
+  let b = 1.9;
+  for (let i = 0; i < 40; i++) {
+    const mid = (a + b) / 2;
+    const [feet, back] = lows(mid);
+    if (back > feet) a = mid;
+    else b = mid;
+  }
+  const theta = (a + b) / 2;
+  const drop = Math.min(...lows(theta));
+  for (const [g] of parts) g.rotateX(theta).translate(0, -drop, 0);
+  return parts;
+}
 
-  const shell = new RoundedBoxGeometry(0.30, CASE_H, CASE_D, 3, 0.012);
-  shell.translate(0, CASE_H / 2, 0);
-  object.addGeometry(world.shared, shell, { color: 0x8f6b4c, ambient: 0.5 }, node);
+/** The clock stands on y = 0 with its displays toward -z and white's end at +x. */
+function clock(): { parts: Part[]; displays: BufferGeometry[] } {
+  const parts: Part[] = [];
+  const B = 0.004;
+  const profile: Point[] = [
+    [-0.046, 0.008], [0.038, 0.008], [0.038, 0.05], [0.03, 0.06], [-0.014, 0.06], [-0.046, 0.016],
+  ];
+  parts.push([across(profile, 0.2, B), PLASTIC]);
 
-  const face = new PlaneGeometry(0.272, 0.128, 1, 1);
-  face.rotateY(Math.PI);
-  face.translate(0, CASE_H / 2, -CASE_D / 2 - 0.002);
-  object.addGeometry(
-    world.shared,
-    face,
-    {
-      map: clockFaceTexture(),
-      color: 0xffffff,
-      ambient: 0.9,
-      castShadow: false,
-      receiveShadow: false,
-    },
-    node,
+  const TILT = Math.atan2(0.032, 0.044);
+  const nz = -Math.cos(TILT);
+  const ny = Math.sin(TILT);
+  const onFace = (g: BufferGeometry, x: number, f: number, proud: number): BufferGeometry =>
+    g.rotateX(TILT).translate(x, 0.016 + 0.044 * f + ny * (B + proud), -0.046 + 0.032 * f + nz * (B + proud));
+
+  parts.push([onFace(box(0.184, 0.034, 0.003, 0.001), 0, 0.64, 0.0015), { color: 0xc3c7cb, ambient: 0.6, gloss: 0.45, metal: 0.4 }]);
+  for (let i = 0; i < 5; i++) {
+    parts.push([
+      onFace(new BoxGeometry(0.016, 0.009, 0.005), (i - 2) * 0.026, 0.16, 0.001),
+      i === 2 ? { color: 0xdd5a50, ambient: 0.6, gloss: 0.3 } : { color: 0xb6b2a6, ambient: 0.58, gloss: 0.25 },
+    ]);
+  }
+  const displays = [1, -1].map((s) =>
+    onFace(
+      mapped(new PlaneGeometry(0.078, 0.028), s === 1 ? AT_TIME_WHITE : AT_TIME_BLACK).rotateY(Math.PI),
+      s * 0.047,
+      0.64,
+      0.0042,
+    ),
   );
 
-  const plate = new RoundedBoxGeometry(0.28, 0.016, 0.07, 2, 0.006);
-  plate.translate(0, CASE_H + 0.006, 0);
-  object.addGeometry(world.shared, plate, { color: 0xa08a6e, ambient: 0.5 }, node);
-
-  // White is at +x and moved last, so white's plunger is the one held down.
-  for (const [sx, up] of [[1, 0.012], [-1, 0.042]] as Array<[number, number]>) {
-    const stem = new CylinderGeometry(0.012, 0.012, up, 10);
-    stem.translate(sx * 0.098, CASE_H + 0.014 + up / 2, 0);
-    object.addGeometry(world.shared, stem, { color: 0xc9b48c, ambient: 0.55 }, node);
-
-    const cap = new CylinderGeometry(0.021, 0.021, 0.012, 12);
-    cap.translate(sx * 0.098, CASE_H + 0.014 + up + 0.006, 0);
-    object.addGeometry(world.shared, cap, { color: 0xd8c69f, ambient: 0.58 }, node);
+  const TOP = 0.06 + B;
+  parts.push([pos(box(0.036, 0.02, 0.046, 0.004), 0, TOP + 0.008, 0.012), PLASTIC]);
+  const lever: Part[] = [[box(0.198, 0.011, 0.042, 0.004), { color: 0x7d838b, ambient: 0.58, gloss: 0.4 }]];
+  for (const s of [-1, 1]) {
+    lever.push([pos(box(0.052, 0.007, 0.038, 0.003), s * 0.07, 0.0075, 0), { color: 0xdd5a50, ambient: 0.6, gloss: 0.3 }]);
   }
+  for (const [g, m] of lever) parts.push([g.rotateZ(-0.105).translate(0, TOP + 0.016, 0.012), m]);
+
+  for (const sx of [-1, 1]) {
+    for (const z of [-0.034, 0.028]) {
+      parts.push([pos(new CylinderGeometry(0.007, 0.007, 0.004, 8), sx * 0.08, 0.002, z), RUBBER]);
+    }
+  }
+  return { parts, displays };
 }
 
-/** Paper and pen at a player's elbow, laid out for the player to read. */
-function addScoresheet(
-  world: HyperWorld,
-  object: HyperObject,
-  x: number,
-  z: number,
-  facing: 1 | -1,
-): void {
-  const sheet = new PlaneGeometry(0.145, 0.205, 1, 1);
-  sheet.rotateX(-Math.PI / 2);
-  sheet.rotateY(facing * (Math.PI / 2));
-  sheet.translate(x, TOP_Y + 0.003, z);
-  object.addGeometry(world.shared, sheet, {
-    map: scoresheetTexture(facing === 1),
-    color: 0xffffff,
-    ambient: 0.92,
-    castShadow: false,
-    receiveShadow: false,
-  });
+/** A table flag on y = 0, flying toward +x. */
+function tableFlag(region: Region, length: number): { parts: Part[]; cloth: BufferGeometry[] } {
+  const H = 0.058;
+  const HOIST = 0.146;
+  const parts: Part[] = [
+    [
+      turn(
+        [
+          [0, 0], [0.026, 0, 1], [0.028, 0.003], [0.028, 0.008, 1], [0.022, 0.011], [0.012, 0.018],
+          [0.006, 0.024], [0.0045, 0.03, 1], [0.0045, 0.034, 1], [0, 0.034],
+        ],
+        12,
+      ),
+      BRASS,
+    ],
+    [pos(new CylinderGeometry(0.0022, 0.0022, 0.18, 6), 0, 0.12, 0), BRASS],
+    [pos(new SphereGeometry(0.0055, 8, 5), 0, 0.212, 0), BRASS],
+  ];
 
-  const pen = new CylinderGeometry(0.0055, 0.0055, 0.125, 8);
-  pen.rotateZ(Math.PI / 2);
-  pen.rotateY(facing * 0.35);
-  pen.translate(x - facing * 0.052, TOP_Y + 0.0055, z + facing * 0.14);
-  object.addGeometry(world.shared, pen, { color: 0x3f4a58, ambient: 0.5 });
+  const NU = 8;
+  const NV = 3;
+  const position: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  for (let j = 0; j <= NV; j++) {
+    for (let i = 0; i <= NU; i++) {
+      const u = i / NU;
+      const v = j / NV;
+      position.push(
+        0.002 + u * length * 0.97,
+        HOIST + v * H - 0.07 * H * u * u,
+        0.006 * u * Math.sin(u * 7.2 + 0.5 + v * 0.6),
+      );
+      uv.push(u, v);
+    }
+  }
+  for (let j = 0; j < NV; j++) {
+    for (let i = 0; i < NU; i++) {
+      const a = j * (NU + 1) + i;
+      index.push(a, a + 1, a + NU + 1, a + 1, a + NU + 2, a + NU + 1);
+    }
+  }
+  const front = new BufferGeometry();
+  front.setAttribute('position', new Float32BufferAttribute(position, 3));
+  front.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  front.setIndex(index);
+  front.computeVertexNormals();
+  mapped(front, region);
+
+  const back = front.clone();
+  const reversed: number[] = [];
+  for (let i = 0; i < index.length; i += 3) reversed.push(index[i], index[i + 2], index[i + 1]);
+  back.setIndex(reversed);
+  const n = back.attributes.normal;
+  for (let i = 0; i < n.count; i++) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+
+  return { parts, cloth: [front, back] };
+}
+
+/** A folded card on y = 0, lettered on both slopes. */
+function tentCard(region: Region): { parts: Part[]; faces: BufferGeometry[] } {
+  const W = 0.17;
+  const SLOPE = 0.064;
+  const SPREAD = 0.022;
+  const lean = Math.asin(SPREAD / SLOPE);
+  const cy = (SLOPE * Math.cos(lean)) / 2;
+  const faces = [
+    mapped(new PlaneGeometry(W, SLOPE).rotateY(Math.PI).rotateX(lean).translate(0, cy, -SPREAD / 2), region),
+    mapped(new PlaneGeometry(W, SLOPE).rotateX(-lean).translate(0, cy, SPREAD / 2), region),
+  ];
+  const parts: Part[] = [
+    [new PlaneGeometry(W, SLOPE).rotateX(lean).translate(0, cy, -SPREAD / 2 + 0.0008), PAPER],
+    [new PlaneGeometry(W, SLOPE).rotateY(Math.PI).rotateX(-lean).translate(0, cy, SPREAD / 2 - 0.0008), PAPER],
+  ];
+  return { parts, faces };
+}
+
+/** A ballpoint lying on y = 0 along x, clip up. */
+function pen(colour: number): Part[] {
+  const R = 0.0042;
+  const lie = (g: BufferGeometry, x: number): BufferGeometry => pos(g.rotateZ(-Math.PI / 2), x, R, 0);
+  const body: HyperMaterialOptions = { color: colour, ambient: 0.58, gloss: 0.5 };
+  return [
+    [lie(new CylinderGeometry(R, R, 0.078, 8), -0.006), body],
+    [lie(new CylinderGeometry(R * 0.82, R + 0.0003, 0.024, 8), 0.045), RUBBER],
+    [lie(new CylinderGeometry(0.0008, R * 0.8, 0.012, 8), 0.063), STEEL],
+    [lie(new CylinderGeometry(R + 0.0004, R + 0.0004, 0.004, 8), -0.045), STEEL],
+    [lie(new CylinderGeometry(0.0028, 0.0028, 0.009, 8), -0.0515), STEEL],
+    [pos(new BoxGeometry(0.034, 0.0012, 0.003), -0.03, 2 * R + 0.001, 0), STEEL],
+    [pos(new BoxGeometry(0.004, 0.003, 0.003), -0.045, 2 * R, 0), STEEL],
+  ];
+}
+
+/** The result board on y = 0, reading toward -z. */
+function scoreboard(): { parts: Part[]; placard: BufferGeometry } {
+  const parts: Part[] = [];
+  const W = 0.96;
+  const H = 0.58;
+  const CY = 0.98;
+  const F = 0.055;
+  const POST_X = 0.36;
+  const POST_Z = 0.038;
+
+  for (const s of [-1, 1]) {
+    parts.push([grained(pos(box(W, F, 0.046, 0.011), 0, CY + (s * H) / 2, 0), 'x'), WALNUT]);
+    parts.push([grained(pos(box(F, H - F + 0.006, 0.046, 0.011), s * (W / 2 - F / 2), CY, 0), 'y'), WALNUT]);
+    parts.push([pos(new BoxGeometry(W - F, 0.008, 0.01), 0, CY + s * (H / 2 - F / 2 - 0.004), -0.014), BRASS]);
+    parts.push([pos(new BoxGeometry(0.008, H - F, 0.01), s * (W / 2 - F / 2 - 0.004), CY, -0.014), BRASS]);
+
+    const top = CY + H / 2 + 0.05;
+    parts.push([pos(box(0.03, top - 0.028, 0.03, 0.004), s * POST_X, (top + 0.028) / 2, POST_Z), ENAMEL]);
+    parts.push([pos(new BoxGeometry(0.034, 0.008, 0.034), s * POST_X, top + 0.003, POST_Z), RUBBER]);
+    parts.push([pos(box(0.044, 0.026, 0.42, 0.006), s * POST_X, 0.019, POST_Z), ENAMEL]);
+    for (const end of [-1, 1]) {
+      parts.push([pos(new CylinderGeometry(0.02, 0.02, 0.006, 10), s * POST_X, 0.003, POST_Z + end * 0.18), RUBBER]);
+    }
+    parts.push([
+      rod(new Vector3(s * POST_X, 0.028, POST_Z + 0.185), new Vector3(s * POST_X, 0.4, POST_Z + 0.012), 0.008),
+      ENAMEL,
+    ]);
+    parts.push([
+      rod(new Vector3(s * POST_X, 0.028, POST_Z - 0.185), new Vector3(s * POST_X, 0.27, POST_Z - 0.012), 0.008),
+      ENAMEL,
+    ]);
+    for (const y of [CY - H / 2, CY + H / 2]) {
+      parts.push([pos(dome(0.008, 8).rotateX(Math.PI / 2), s * POST_X, y, POST_Z + 0.015), BRASS]);
+    }
+  }
+  parts.push([pos(new BoxGeometry(2 * POST_X - 0.03, 0.022, 0.022), 0, 0.2, POST_Z), ENAMEL]);
+  parts.push([grained(pos(new BoxGeometry(W - F + 0.006, H - F + 0.006, 0.018), 0, CY, 0.004), 'x'), PLYWOOD]);
+
+  const placard = new PlaneGeometry(W - F, H - F, 6, 4).rotateY(Math.PI).translate(0, CY, -0.009);
+  return { parts, placard };
 }
 
 export interface ChessResult {
@@ -839,159 +1436,107 @@ export function buildChessTable(
 ): ChessResult {
   const object = new HyperObject(at);
   object.rotation.y = yaw;
-
-  // ---- table: 1.08 × 0.86, top at knuckle height, four turned legs.
-  const HALF_X = 0.54;
-  const HALF_Z = 0.43;
-  const LEG_X = 0.485;
-  const LEG_Z = 0.375;
-
-  const top = new RoundedBoxGeometry(HALF_X * 2, 0.046, HALF_Z * 2, 3, 0.014);
-  top.translate(0, TOP_Y - 0.023, 0);
-  object.addGeometry(world.shared, top, { color: WOOD, ambient: 0.55 });
-
-  const apron = new RoundedBoxGeometry(0.96, 0.056, 0.74, 2, 0.012);
-  apron.translate(0, TOP_Y - 0.076, 0);
-  object.addGeometry(world.shared, apron, { color: DARKWOOD, ambient: 0.5 });
-
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const leg = tableLeg();
-      leg.translate(sx * LEG_X, 0, sz * LEG_Z);
-      object.addGeometry(world.shared, leg, { color: DARKWOOD, ambient: 0.48 });
+  const put = (parts: Part[], node?: Group): void => {
+    for (const [g, opts] of parts) {
+      object.addGeometry(world.shared, node ? g : g.translate(STAGE_X, 0, STAGE_Z), opts, node);
     }
-  }
+  };
 
-  for (const [w, d, dx, dz] of [
-    [0.94, 0.026, 0, LEG_Z],
-    [0.94, 0.026, 0, -LEG_Z],
-    [0.026, 0.72, LEG_X, 0],
-    [0.026, 0.72, -LEG_X, 0],
-  ] as Array<[number, number, number, number]>) {
-    const bar = new RoundedBoxGeometry(w, 0.030, d, 2, 0.008);
-    bar.translate(dx, 0.118, dz);
-    object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.46 });
-  }
+  put(dais());
+  put(table());
 
-  // ---- the board: an inlaid panel with the playing face a whisker proud.
-  const panel = new RoundedBoxGeometry(FACE + 0.008, 0.014, FACE + 0.008, 2, 0.005);
-  panel.translate(0, TOP_Y + 0.007, 0);
-  object.addGeometry(world.shared, panel, { color: EBONY, ambient: 0.48 });
-
-  const face = new PlaneGeometry(FACE, FACE, 1, 1);
-  face.rotateX(-Math.PI / 2);
-  // The canvas is painted as white sees the board; this second turn is what
-  // makes that true, putting a1 at the +x/+z corner where square() puts it.
-  face.rotateY(Math.PI / 2);
-  face.translate(0, BOARD_Y, 0);
-  object.addGeometry(world.shared, face, {
+  const boardFace = new PlaneGeometry(FACE, FACE, 1, 1);
+  boardFace.rotateX(-Math.PI / 2);
+  // The canvas is painted as white sees the board; this turn puts a1 at the +x/+z corner where square() puts it.
+  boardFace.rotateY(Math.PI / 2);
+  boardFace.translate(STAGE_X, BOARD_Y, STAGE_Z);
+  object.addGeometry(world.shared, boardFace, {
     map: boardTexture(),
     color: 0xffffff,
-    ambient: 0.88,
+    ambient: 0.85,
     castShadow: false,
-    receiveShadow: false,
   });
 
-  // "Black" is a warm rosewood — true black swallows every contour this
-  // lighting model has, and the turnings are the whole point of the set.
-  const WHITE_MEN = { color: 0xf4edda, ambient: 0.5 };
-  const BLACK_MEN = { color: 0x8a6b56, ambient: 0.46 };
-  object.addGeometry(world.shared, sideGeometry(WHITE_STATIC, 1), WHITE_MEN);
-  object.addGeometry(world.shared, sideGeometry(BLACK_STATIC, -1), BLACK_MEN);
+  const standing = (list: Array<[PieceKind, number, number]>, facing: 1 | -1, wood: HyperMaterialOptions) => {
+    for (const [kind, file, rank] of list) {
+      const home = restPose([file, rank]);
+      put(moved(piece(kind, wood), home.x, home.y, home.z, facing * (Math.PI / 2) + home.rot));
+    }
+  };
+  standing(WHITE_STATIC, 1, BOXWOOD);
+  standing(BLACK_STATIC, -1, EBONY);
 
-  const movers = MOVERS.map(({ kind, facing, start }) => {
+  const carried = (kind: PieceKind, facing: 1 | -1): Group => {
     const node = new Group();
     object.add(node);
-    object.addGeometry(
-      world.shared,
-      moverGeometry(kind, facing),
-      facing === 1 ? WHITE_MEN : BLACK_MEN,
-      node,
-    );
-    return { node, home: restPose(start) };
-  });
+    put(moved(piece(kind, facing === 1 ? BOXWOOD : EBONY), 0, 0, 0, facing * (Math.PI / 2)), node);
+    return node;
+  };
+  const movers = MOVERS.map(({ kind, facing, start }) => ({
+    node: carried(kind, facing),
+    home: restPose(start),
+  }));
+  const king = carried('K', -1);
+  const kingHome = restPose(BLACK_KING);
 
-  // ---- clock at the far edge, where both players and the visitor can read it.
-  const clockNode = new Group();
-  clockNode.position.set(0, TOP_Y, 0.355);
-  clockNode.rotation.y = 0.06;
-  object.add(clockNode);
-  addClock(world, object, clockNode);
+  const decals: BufferGeometry[] = [];
+  const placed = (g: BufferGeometry, x: number, y: number, z: number, turn = 0): BufferGeometry =>
+    g.rotateY(turn).translate(x, y, z);
 
-  // ---- scoresheets on the near edge, one at each player's elbow.
-  addScoresheet(world, object, 0.402, -0.115, 1);
-  addScoresheet(world, object, -0.402, 0.115, -1);
+  const timer = clock();
+  put(moved(timer.parts, 0, TOP_Y, 0.4, 0.04));
+  for (const g of timer.displays) decals.push(placed(g, 0, TOP_Y, 0.4, 0.04));
 
-  // ---- chairs, pushed back from a game that finished early.
-  for (const [sx, skew] of [[1, 0.05], [-1, -0.34]] as Array<[number, number]>) {
-    const chair = new Group();
-    chair.position.set(sx * 0.80, 0, sx * 0.03);
-    chair.rotation.y = sx * (Math.PI / 2) + skew;
-    object.add(chair);
-    addChair(world, object, chair);
+  const sheet = (region: Region, x: number, z: number, turn: number): void => {
+    const g = mapped(new PlaneGeometry(0.145, 0.205, 1, 1).rotateX(-Math.PI / 2), region);
+    decals.push(placed(g, x, TOP_Y + 0.003, z, turn));
+  };
+  sheet(AT_SHEET_WHITE, 0.255, -0.385, Math.PI / 2);
+  sheet(AT_SHEET_BLACK, -0.255, 0.385, -Math.PI / 2 + 0.2);
+  put(moved(pen(0x4f74b0), 0.25, TOP_Y + 0.003, -0.447, 0.07));
+  put(moved(pen(0x4f74b0), -0.63, FLOOR, 0.5, 0.9));
+
+  const seats: Array<[Region, Region, number, number]> = [
+    [AT_CARD_WHITE, AT_TURKIYE, 1, 0.087],
+    [AT_CARD_BLACK, AT_NORWAY, -1, 0.08],
+  ];
+  for (const [cardRegion, flagRegion, side, length] of seats) {
+    const card = tentCard(cardRegion);
+    put(moved(card.parts, side * 0.19, TOP_Y, -0.535, side * -0.05));
+    for (const g of card.faces) decals.push(placed(g, side * 0.19, TOP_Y, -0.535, side * -0.05));
+
+    const flag = tableFlag(flagRegion, length);
+    put(moved(flag.parts, side * 0.33 - 0.01, TOP_Y, -0.53, -0.6));
+    for (const g of flag.cloth) decals.push(placed(g, side * 0.33 - 0.01, TOP_Y, -0.53, -0.6));
   }
 
-  // ---- the scoreboard, standing behind the far edge.
-  const boardNode = new Group();
-  boardNode.position.set(0, 0, 0.98);
-  object.add(boardNode);
-
-  const PANEL_W = 0.96;
-  const PANEL_H = 0.58;
-  const PANEL_CY = 0.92;
-  const F = 0.055;
-
-  for (const sx of [-1, 1]) {
-    const h = PANEL_CY + PANEL_H / 2 + 0.04;
-    const post = new CylinderGeometry(0.024, 0.032, h, 10);
-    post.translate(sx * (PANEL_W / 2 - 0.05), h / 2, 0.03);
-    object.addGeometry(world.shared, post, { color: DARKWOOD, ambient: 0.48 }, boardNode);
-
-    const shoe = new RoundedBoxGeometry(0.09, 0.036, 0.30, 2, 0.010);
-    shoe.translate(sx * (PANEL_W / 2 - 0.05), 0.018, 0.03);
-    object.addGeometry(world.shared, shoe, { color: DARKWOOD, ambient: 0.46 }, boardNode);
-  }
-
-  for (const [w, hh, dx, dy] of [
-    [PANEL_W, F, 0, PANEL_H / 2],
-    [PANEL_W, F, 0, -PANEL_H / 2],
-    [F, PANEL_H + F, PANEL_W / 2 - F / 2, 0],
-    [F, PANEL_H + F, -(PANEL_W / 2 - F / 2), 0],
-  ] as Array<[number, number, number, number]>) {
-    const bar = new RoundedBoxGeometry(w, hh, 0.042, 2, 0.010);
-    bar.translate(dx, PANEL_CY + dy, 0);
-    object.addGeometry(world.shared, bar, { color: DARKWOOD, ambient: 0.5 }, boardNode);
-  }
-
-  // The panel, and the score as a face on the side toward the table.
-  const PANEL_T = 0.026;
-  const backing = new RoundedBoxGeometry(PANEL_W - F, PANEL_H - F, PANEL_T, 2, 0.004);
-  backing.translate(0, PANEL_CY, 0);
-  object.addGeometry(world.shared, backing, { color: 0x6b6357, ambient: 0.5 }, boardNode);
-
-  const placard = new PlaneGeometry(PANEL_W - F, PANEL_H - F, 6, 4);
-  placard.rotateY(Math.PI);
-  placard.translate(0, PANEL_CY, -(PANEL_T / 2 + 0.004));
-  object.addGeometry(
-    world.shared,
-    placard,
-    {
-      map: scoreboardTexture(),
+  const atlas = atlasTexture();
+  for (const g of decals) {
+    object.addGeometry(world.shared, g.translate(STAGE_X, 0, STAGE_Z), {
+      map: atlas,
       color: 0xffffff,
       ambient: 0.9,
       castShadow: false,
       receiveShadow: false,
-    },
-    boardNode,
-  );
+    });
+  }
+
+  put(moved(chair(), 0.41, FLOOR, 0, Math.PI / 2));
+  put(moved(laidOnItsBack(chair(), 0.45), -1.07, 0, 0.06, -Math.PI / 2 + 0.2));
+
+  const result = scoreboard();
+  put(moved(result.parts, 0.3, FLOOR, 1.1, 0.3));
+  object.addGeometry(world.shared, placed(result.placard, 0.3 + STAGE_X, FLOOR, 1.1 + STAGE_Z, 0.3), {
+    map: scoreboardTexture(),
+    color: 0xffffff,
+    ambient: 0.9,
+    castShadow: false,
+    receiveShadow: false,
+  });
 
   world.add(object);
 
-  // ---------------- the game.
-  //
-  // Every pose is a pure function of one clock, so a dropped frame or a
-  // backgrounded tab cannot leave a piece stranded between squares.
-  // `rest[m][p]` is where mover m stands once p plies have been played.
+  // rest[m][p] is where mover m stands once p plies have been played.
   const rest: Pose[][] = movers.map((m) => [m.home]);
   PLIES.forEach((ply, p) => {
     rest.forEach((poses, m) => {
@@ -1006,7 +1551,6 @@ export function buildChessTable(
 
   const poseAt = (m: number, at: number): Pose => {
     if (at >= GAME + HOLD) {
-      // Break up the position: everyone home at once, the way a game is reset.
       const u = Math.min(1, (at - GAME - HOLD) / RESET);
       return glide(rest[m][FINAL], movers[m].home, u, SLIDE_LIFT);
     }
@@ -1016,17 +1560,50 @@ export function buildChessTable(
     const local = at - p * PLY;
     const ply = PLIES[p];
 
-    // Thinking. Nothing on the board moves; the clock is running anyway.
     if (local < DWELL) return rest[m][p];
 
     const u = (local - DWELL) / TRAVEL;
     if (ply.mover === m) return glide(rest[m][p], rest[m][p + 1], u, ply.lift);
-    // The man being taken comes off before the queen lands on him, because the
-    // alternative is two pieces sharing f7 for a fifth of a second.
+    // The man being taken has to be off f7 before the queen lands on it.
     if (ply.captures === m) {
       return glide(rest[m][p], rest[m][p + 1], Math.min(1, u / 0.62), 0.8 * SQ);
     }
     return rest[m][p];
+  };
+
+  const fall = fallTable([[BASE.K * 0.9, 0], ...KING]);
+  const TIP_TOWARD = 0.12;
+  const tipX = Math.cos(TIP_TOWARD);
+  const tipZ = Math.sin(TIP_TOWARD);
+  const tipAxis = new Vector3(tipZ, 0, -tipX);
+  const UP = new Vector3(0, 1, 0);
+  const spin = new Quaternion();
+
+  const poseKing = (at: number): void => {
+    let theta = 0;
+    let roll = 0;
+    let raise = 0;
+    const since = at - GAME - TIP_DELAY;
+    if (at >= GAME + HOLD) {
+      const u = Math.min(1, (at - GAME - HOLD) / (RESET * 0.75));
+      theta = fall.end * (1 - u * u * (3 - 2 * u));
+      raise = Math.sin(Math.PI * u) * 0.35 * SQ;
+    } else if (since > FALL) {
+      const s = since - FALL;
+      theta = fall.end - 0.1 * Math.abs(Math.sin(s * 12)) * Math.exp(-s * 6);
+      roll = 0.3 * Math.sin(s * 7) * Math.exp(-s * 2.4);
+    } else if (since > 0) {
+      theta = fall.end * Math.pow(since / FALL, 2.2);
+    }
+    const { lift, slide } = fall.at(theta);
+    king.position.set(
+      STAGE_X + kingHome.x + tipX * slide * SQ,
+      kingHome.y + lift * SQ + raise,
+      STAGE_Z + kingHome.z + tipZ * slide * SQ,
+    );
+    king.quaternion
+      .setFromAxisAngle(tipAxis, theta)
+      .multiply(spin.setFromAxisAngle(UP, kingHome.rot + roll));
   };
 
   const tick = (_worldGV: GyroVector, dt: number) => {
@@ -1034,9 +1611,10 @@ export function buildChessTable(
 
     for (let m = 0; m < movers.length; m++) {
       const pose = poseAt(m, elapsed);
-      movers[m].node.position.set(pose.x, pose.y, pose.z);
+      movers[m].node.position.set(STAGE_X + pose.x, pose.y, STAGE_Z + pose.z);
       movers[m].node.rotation.y = pose.rot;
     }
+    poseKing(elapsed);
   };
 
   return { object, tick };

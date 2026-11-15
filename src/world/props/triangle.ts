@@ -1,7 +1,18 @@
-import { PlaneGeometry, Vector3 } from 'three';
+import { PlaneGeometry, Vector3, type BufferGeometry } from 'three';
 import { HyperObject, type HyperWorld } from '../../engine';
+import { merge, moved, type Part } from '../geometry';
 import { placeOnGround, type Poi } from '../placement';
-import { makeTextTexture } from '../text';
+import {
+  DECAL,
+  DISC_TOP,
+  HEAD_TOP,
+  fieldStool,
+  rangingPole,
+  surveyAtlas,
+  surveyMarker,
+  theodolite,
+  tripod,
+} from './surveyKit';
 
 /**
  * A triangle with three right angles, painted on the ground.
@@ -120,24 +131,44 @@ export function buildTriangle(world: HyperWorld): { objects: HyperObject[]; poi:
     }
   }
 
-  // ---- the corners: a flat "90°" at each, facing into the triangle.
-  const centroid = C[0].clone().add(C[1]).add(C[2]).normalize();
-  const cornerGeo = new PlaneGeometry(0.85, 0.85, 3, 3);
-  cornerGeo.rotateX(-Math.PI / 2);
-  cornerGeo.translate(0, 0.045, 0);
-  const cornerTex = makeTextTexture('90°', { width: 512, height: 512, color: '#3f4a3a' });
+  const atlas = surveyAtlas();
+  const SURVEYED = 0;
+  const POLE_AWAY = 0.4;
 
-  for (const c of C) {
+  for (let k = 0; k < 3; k++) {
+    const c = C[k];
+    const sighted = C[(k + 2) % 3];
     const o = new HyperObject(groundGV(c));
-    o.rotation.y = yawToward(c, centroid);
-    o.addGeometry(world.shared, cornerGeo, {
-      map: cornerTex,
-      color: 0xffffff,
-      ambient: 0.9,
-      alphaTest: 0.3,
-      alphaBlend: true,
-      castShadow: false,
-    });
+    // Everything at a corner is authored with the side to `sighted` leaving along -z and the other side along +x.
+    o.rotation.y = yawToward(c, sighted);
+    o.name = `survey-corner-${k}`;
+
+    const marker = surveyMarker(41 + k * 17);
+    const solids: Part[] = marker.parts;
+    const decals: BufferGeometry[] = marker.decals;
+
+    if (k === SURVEYED) {
+      solids.push(...tripod(DISC_TOP));
+      const instrument = theodolite();
+      solids.push(...moved(instrument.parts, 0, HEAD_TOP, 0));
+      decals.push(...instrument.decals.map((g) => g.translate(0, HEAD_TOP, 0)));
+
+      const stool = fieldStool();
+      const TURN = -Math.PI / 4;
+      solids.push(...moved(stool.parts, -0.87, 0, 0.35, TURN));
+      decals.push(...stool.decals.map((g) => g.rotateY(TURN).translate(-0.87, 0, 0.35)));
+
+      const stake = slerp(c, sighted, POLE_AWAY / (Math.PI / 2)).normalize();
+      const pole = new HyperObject(groundGV(stake));
+      pole.rotation.y = yawToward(stake, c);
+      pole.name = 'survey-pole';
+      for (const [g, opts] of rangingPole()) pole.addGeometry(world.shared, g, opts);
+      world.add(pole);
+      objects.push(pole);
+    }
+
+    for (const [g, opts] of solids) o.addGeometry(world.shared, g, opts);
+    o.addGeometry(world.shared, merge(decals), { ...DECAL, map: atlas });
     world.add(o);
     objects.push(o);
   }
