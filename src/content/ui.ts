@@ -83,10 +83,10 @@ E      etkileşim
     `left side  move
 right side  camera
 tap         interact
-hold ≫      sprint`,
-    `sol taraf  hareket
+hold >>     sprint`,
+    `sol taraf      hareket
 sağ taraf      kamera
 dokun          etkileşim
-≫ basılı tut  koşu`,
+>> basılı tut  koşu`,
   ),
 };

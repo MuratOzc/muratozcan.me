@@ -38,6 +38,12 @@ function initial(): Lang {
 let current: Lang = initial();
 const listeners = new Set<(l: Lang) => void>();
 
+// CSS text-transform takes its casing rules from this: without it Turkish i is capitalised to I, not İ.
+function markDocument(): void {
+  document.documentElement.lang = current;
+}
+markDocument();
+
 export function lang(): Lang {
   return current;
 }
@@ -55,6 +61,7 @@ export function upper(s: string): string {
 export function setLang(l: Lang): void {
   if (l === current) return;
   current = l;
+  markDocument();
   try {
     localStorage.setItem(STORAGE_KEY, l);
   } catch {

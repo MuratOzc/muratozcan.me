@@ -167,7 +167,7 @@ export function buildPortrait(
         'İşte bu yakışıklı benim. Gerçek hayatta da bu kadar karakterliyim.',
       ),
       gv: at,
-      radius: units(6),
+      radius: units(3),
     },
   };
 }
