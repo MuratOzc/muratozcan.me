@@ -170,9 +170,16 @@ export interface HyperMaterialOptions {
   mottleAmount?: number;
   /** 0 to 1: how far the broad mottle patches drift in hue, yellower to cooler. */
   mottleHue?: number;
+  gloss?: number;
+  metal?: number;
+  grain?: number;
   /** Authored units. Needs uv.y running 0 at the root to 1 at the tip; not applied in the shadow pass. */
   sway?: number;
   side?: Side;
+}
+
+export function hasSurface(opts: HyperMaterialOptions): boolean {
+  return (opts.gloss ?? 0) > 0 || (opts.metal ?? 0) > 0 || (opts.grain ?? 0) > 0;
 }
 
 export interface HyperMaterial extends ShaderMaterial {
@@ -190,6 +197,7 @@ function build(
   const mottled = (opts.mottleAmount ?? 0) > 0;
   const gridded = (opts.gridScale ?? 0) > 0;
   const sways = (opts.sway ?? 0) > 0;
+  const surfaced = hasSurface(opts);
 
   const defines: Record<string, string> = {};
   if (hemisphere === 'top') defines.TOP_HEMISPHERE = '1';
@@ -200,8 +208,10 @@ function build(
   // only near-side materials pay for the sampling.
   if (receives) defines.USE_SHADOWMAP = '1';
   if (gridded) defines.USE_GRID = '1';
-  if (mottled) {
-    defines.USE_MOTTLE = '1';
+  if (mottled) defines.USE_MOTTLE = '1';
+  if (surfaced) defines.USE_SURFACE = '1';
+  if (mottled || surfaced) {
+    defines.USE_NOISE = '1';
     defines.NOISE_TEXEL = (1 / NOISE_SIZE).toFixed(8);
   }
   if (sways) defines.USE_SWAY = '1';
@@ -223,7 +233,6 @@ function build(
     uniforms.uMottleScale = { value: opts.mottleScale ?? 40.0 };
     uniforms.uMottleAmount = { value: opts.mottleAmount };
     uniforms.uMottleHue = { value: opts.mottleHue ?? 0 };
-    uniforms.uNoise = { value: noiseTexture() };
     uniforms.uStaticPos = placement.uStaticPos;
     uniforms.uStaticRot = placement.uStaticRot;
   }
@@ -232,6 +241,7 @@ function build(
     uniforms.uAlphaTest = { value: opts.alphaTest ?? 0.5 };
   }
   if (sways) uniforms.uSway = { value: opts.sway };
+  if (mottled || surfaced) uniforms.uNoise = { value: noiseTexture() };
 
   const mat = new ShaderMaterial({
     glslVersion: GLSL3,

@@ -17,6 +17,7 @@ import {
   createHyperMaterials,
   createObjectUniforms,
   createShadowDepthMaterial,
+  hasSurface,
   type HyperMaterial,
   type HyperMaterialOptions,
   type SharedUniforms,
@@ -71,7 +72,7 @@ function subdivide(geometry: BufferGeometry): BufferGeometry | null {
 
   // A vertex is its attributes laid end to end: position, then whichever of
   // normal, uv and colour the geometry has.
-  const layout = (['position', 'normal', 'uv', 'color'] as const)
+  const layout = (['position', 'normal', 'uv', 'color', 'grain'] as const)
     .filter((name) => geometry.attributes[name])
     .map((name) => ({ name, attribute: geometry.attributes[name], size: geometry.attributes[name].itemSize }));
   const stride = layout.reduce((n, l) => n + l.size, 0);
@@ -161,6 +162,7 @@ type Tint = [number, number, number, number];
 interface Part {
   geometry: BufferGeometry;
   tint: Tint;
+  surface: [number, number, number] | null;
 }
 
 interface Pending extends Part {
@@ -177,12 +179,16 @@ interface Batch {
 }
 
 const WHITE: Tint = [1, 1, 1, 1];
+
+function surfaceOf(opts: HyperMaterialOptions): [number, number, number] | null {
+  return hasSurface(opts) ? [opts.gloss ?? 0, opts.metal ?? 0, opts.grain ?? 0] : null;
+}
 const tintColor = new Color();
 const textureIds = new WeakMap<object, number>();
 let nextTextureId = 1;
 
-// Every HyperMaterialOptions field except color and ambient has to appear
-// here, or parts that differ in it are merged and one of them draws wrong.
+// Every HyperMaterialOptions field except color, ambient and the values of gloss, metal and grain has to
+// appear here, or parts that differ in it are merged and one of them draws wrong.
 function batchKey(parent: Object3D, opts: HyperMaterialOptions): string {
   let map = 0;
   if (opts.map) {
@@ -202,6 +208,7 @@ function batchKey(parent: Object3D, opts: HyperMaterialOptions): string {
     opts.gridWidth ?? '',
     opts.gridFade ?? '',
     opts.sway ?? 0,
+    hasSurface(opts) ? 1 : 0,
     (opts.mottleAmount ?? 0) > 0
       ? `${opts.mottleScale ?? ''}/${opts.mottleAmount}/${opts.mottleHue ?? 0}`
       : '',
@@ -209,6 +216,126 @@ function batchKey(parent: Object3D, opts: HyperMaterialOptions): string {
 }
 
 const mergedCache = new Map<string, BufferGeometry>();
+
+const RAYS: Array<[number, number, number]> = [];
+for (let x = -1; x <= 1; x++) {
+  for (let y = -1; y <= 1; y++) {
+    for (let z = -1; z <= 1; z++) {
+      const length = Math.hypot(x, y, z);
+      if (length > 0) RAYS.push([x / length, y / length, z / length]);
+    }
+  }
+}
+
+function* bake(geometry: BufferGeometry): Generator<void> {
+  const position = geometry.attributes.position.array as Float32Array;
+  const normal = geometry.attributes.normal.array as Float32Array;
+  const index = geometry.index!.array;
+  const tint = geometry.attributes.aTint as BufferAttribute;
+  const count = position.length / 3;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < position.length; i++) {
+    const c = i % 3;
+    if (position[i] < min[c]) min[c] = position[i];
+    if (position[i] > max[c]) max[c] = position[i];
+  }
+  const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  if (!(extent > 0)) return;
+
+  const cell = Math.max(extent / 110, 0.012);
+  const pad = 2;
+  const size = [0, 1, 2].map((c) => Math.ceil((max[c] - min[c]) / cell) + 2 * pad + 1);
+  const grid = new Uint8Array(size[0] * size[1] * size[2]);
+  const slot = (x: number, y: number, z: number): number => {
+    const i = Math.floor((x - min[0]) / cell) + pad;
+    const j = Math.floor((y - min[1]) / cell) + pad;
+    const k = Math.floor((z - min[2]) / cell) + pad;
+    if (i < 0 || j < 0 || k < 0 || i >= size[0] || j >= size[1] || k >= size[2]) return -1;
+    return (k * size[1] + j) * size[0] + i;
+  };
+  yield;
+
+  for (let t = 0; t < index.length; t += 3) {
+    const a = index[t] * 3;
+    const b = index[t + 1] * 3;
+    const c = index[t + 2] * 3;
+    const longest = Math.max(
+      Math.hypot(position[a] - position[b], position[a + 1] - position[b + 1], position[a + 2] - position[b + 2]),
+      Math.hypot(position[b] - position[c], position[b + 1] - position[c + 1], position[b + 2] - position[c + 2]),
+      Math.hypot(position[c] - position[a], position[c + 1] - position[a + 1], position[c + 2] - position[a + 2]),
+    );
+    const n = Math.min(48, Math.max(1, Math.ceil(longest / (cell * 0.6))));
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= n - i; j++) {
+        const u = i / n;
+        const w = j / n;
+        const s = slot(
+          position[a] + (position[b] - position[a]) * u + (position[c] - position[a]) * w,
+          position[a + 1] + (position[b + 1] - position[a + 1]) * u + (position[c + 1] - position[a + 1]) * w,
+          position[a + 2] + (position[b + 2] - position[a + 2]) * u + (position[c + 2] - position[a + 2]) * w,
+        );
+        if (s >= 0) grid[s] = 1;
+      }
+    }
+    if (n > 8 || t % 96 === 0) yield;
+  }
+
+  // A cell holding a surface reaches up to √3 cells off it: rays that start nearer make the surface shade itself.
+  const LIFT = 1.75;
+  const REACH = [1.2, 2.6, 4.2, 6];
+  const WEIGHT = [1, 0.75, 0.5, 0.3];
+  const open = new Float32Array(count).fill(1);
+  for (let v = 0; v < count; v++) {
+    const nx = normal[v * 3];
+    const ny = normal[v * 3 + 1];
+    const nz = normal[v * 3 + 2];
+    const x = position[v * 3] + nx * cell * LIFT;
+    const y = position[v * 3 + 1] + ny * cell * LIFT;
+    const z = position[v * 3 + 2] + nz * cell * LIFT;
+    let rays = 0;
+    let blocked = 0;
+    for (const [dx, dy, dz] of RAYS) {
+      if (dx * nx + dy * ny + dz * nz < 0.25) continue;
+      rays++;
+      for (let r = 0; r < REACH.length; r++) {
+        const s = slot(x + dx * REACH[r] * cell, y + dy * REACH[r] * cell, z + dz * REACH[r] * cell);
+        if (s >= 0 && grid[s]) {
+          blocked += WEIGHT[r];
+          break;
+        }
+      }
+    }
+    if (rays > 0) open[v] = 1 - 0.55 * (blocked / rays);
+    if (v % 32 === 31) yield;
+  }
+
+  const rgba = tint.array as Float32Array;
+  for (let v = 0; v < count; v++) {
+    for (let c = 0; c < 3; c++) rgba[v * 4 + c] *= open[v];
+  }
+  tint.needsUpdate = true;
+}
+
+const bakes: Array<Generator<void>> = [];
+let bakeQueued = false;
+
+function runBakes(deadline?: IdleDeadline): void {
+  bakeQueued = false;
+  const budget = deadline && !deadline.didTimeout ? Math.min(deadline.timeRemaining(), 8) : 4;
+  const began = performance.now();
+  while (bakes.length > 0 && performance.now() - began < budget) {
+    if (bakes[0].next().done) bakes.shift();
+  }
+  if (bakes.length > 0) queueBakes();
+}
+
+function queueBakes(): void {
+  if (bakeQueued) return;
+  bakeQueued = true;
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(runBakes, { timeout: 100 });
+  else setTimeout(runBakes, 32);
+}
 
 function copyAttribute(
   source: BufferAttribute | undefined,
@@ -237,7 +364,7 @@ function mergeParts(parts: Part[]): BufferGeometry {
   const signature = parts
     .map((p) => {
       const version = (p.geometry.attributes.position as BufferAttribute).version;
-      return `${p.geometry.id}.${version}:${p.tint.join(',')}`;
+      return `${p.geometry.id}.${version}:${p.tint.join(',')}:${p.surface?.join(',') ?? ''}`;
     })
     .join(';');
   const cached = mergedCache.get(signature);
@@ -254,6 +381,9 @@ function mergeParts(parts: Part[]): BufferGeometry {
   const normal = new Float32Array(vertexCount * 3);
   const uv = new Float32Array(vertexCount * 2);
   const tint = new Float32Array(vertexCount * 4);
+  const surfaced = parts[0].surface !== null;
+  const surface = surfaced ? new Float32Array(vertexCount * 3) : null;
+  const grain = surfaced ? new Float32Array(vertexCount * 3) : null;
   const index = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
 
   let v = 0;
@@ -269,6 +399,11 @@ function mergeParts(parts: Part[]): BufferGeometry {
     copyAttribute(g.attributes.normal as BufferAttribute, normal, v, count, 3);
     copyAttribute(g.attributes.uv as BufferAttribute | undefined, uv, v, count, 2);
     for (let k = 0; k < count; k++) tint.set(part.tint, (v + k) * 4);
+    if (surface && grain) {
+      for (let k = 0; k < count; k++) surface.set(part.surface!, (v + k) * 3);
+      const along = (g.attributes.grain ?? g.attributes.position) as BufferAttribute;
+      copyAttribute(along, grain, v, count, 3);
+    }
     const shade = g.attributes.color;
     if (shade) {
       for (let k = 0; k < count; k++) {
@@ -286,9 +421,15 @@ function mergeParts(parts: Part[]): BufferGeometry {
   merged.setAttribute('normal', new BufferAttribute(normal, 3));
   merged.setAttribute('uv', new BufferAttribute(uv, 2));
   merged.setAttribute('aTint', new BufferAttribute(tint, 4));
+  if (surface && grain) {
+    merged.setAttribute('aSurface', new BufferAttribute(surface, 3));
+    merged.setAttribute('aGrain', new BufferAttribute(grain, 3));
+  }
   merged.setIndex(new BufferAttribute(index, 1));
   merged.computeBoundingSphere();
   mergedCache.set(signature, merged);
+  bakes.push(bake(merged));
+  queueBakes();
   return merged;
 }
 
@@ -421,6 +562,7 @@ export class HyperObject extends Group {
     const node = parent ?? this;
     tintColor.set(full.color ?? 0xffffff);
     this.pending.push({
+      surface: surfaceOf(full),
       // Welded now, not at flush: a caller may go on to move this geometry
       // and add it again, and each call has to keep the shape it was given.
       geometry: prepare(geometry),
@@ -440,7 +582,8 @@ export class HyperObject extends Group {
     this.shared = shared;
     const full = { tanKHeight: this.useTanKHeight, ...opts };
     this.boundsStale = true;
-    return this.build([{ geometry: prepare(geometry), tint: WHITE }], full, parent ?? this);
+    const part = { geometry: prepare(geometry), tint: WHITE, surface: surfaceOf(full) };
+    return this.build([part], full, parent ?? this);
   }
 
   private build(parts: Part[], opts: HyperMaterialOptions, parent: Object3D): HyperMaterial[] {

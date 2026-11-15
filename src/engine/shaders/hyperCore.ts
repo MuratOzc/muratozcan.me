@@ -156,6 +156,13 @@ out float vWDot;
 out vec4 vTint;
 out vec4 vView;
 
+#ifdef USE_SURFACE
+in vec3 aSurface;
+in vec3 aGrain;
+out vec3 vSurface;
+out vec3 vGrain;
+#endif
+
 #ifdef USE_SWAY
 uniform float uSway;
 #endif
@@ -165,6 +172,10 @@ void main() {
   vec3 n = normalize(mat3(modelMatrix) * normal);
   vUv = uv;
   vTint = aTint;
+  #ifdef USE_SURFACE
+    vSurface = aSurface;
+    vGrain = aGrain;
+  #endif
   #ifdef USE_SWAY
     float bend = uSway * uv.y * uv.y;
     p.x += bend * sin(uTime * 1.7 + p.x * 3.1 + p.z * 2.3);
@@ -297,8 +308,16 @@ in vec3 vLocalPos;
 uniform float uMottleScale;
 uniform float uMottleAmount;
 uniform float uMottleHue;
-uniform lowp sampler3D uNoise;
 in vec4 vSphere;
+#endif
+
+#ifdef USE_SURFACE
+in vec3 vSurface;
+in vec3 vGrain;
+#endif
+
+#ifdef USE_NOISE
+uniform lowp sampler3D uNoise;
 #endif
 
 #ifdef USE_MAP
@@ -331,7 +350,7 @@ float grain(vec2 p) {
   return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
-#ifdef USE_MOTTLE
+#ifdef USE_NOISE
 // The +0.5 puts lattice points on the texel centres of noise.ts's texture.
 float vnoise(vec3 x) {
   vec3 i = floor(x);
@@ -411,9 +430,11 @@ void main() {
 
   // Shadow scales the DIRECT light only; the ambient floor below is what a
   // fully shadowed surface is left with.
+  float sunlit = 1.0;
   #ifdef USE_SHADOWMAP
-    direct *= shadowFactor(ndl);
+    sunlit = shadowFactor(ndl);
   #endif
+  direct *= sunlit;
 
   // At ambient 1 a surface is a lamp or a screen and takes no light at all.
   float ambient = uAmbient * vTint.a;
@@ -450,11 +471,37 @@ void main() {
     base *= tex.rgb;
   #endif
 
+  #ifdef USE_SURFACE
+    float gloss = vSurface.x;
+    float metal = vSurface.y;
+    if (vSurface.z > 0.0) {
+      float streak = 0.6 * vnoise(vGrain) + 0.4 * vnoise(vGrain * 2.7 + 3.1);
+      base *= 1.0 + vSurface.z * (2.0 * streak - 1.0);
+    }
+  #else
+    const float gloss = 0.0;
+  #endif
+
   vec3 col = base * light;
   float rim = 1.0 - abs(dot(n, view));
   rim *= rim;
   rim *= rim;
-  col += base * uSkyLight * (0.35 * rim * (1.0 - unlit));
+  col += base * uSkyLight * (0.35 * rim * (1.0 - unlit) * (1.0 - gloss));
+
+  #ifdef USE_SURFACE
+    col *= 1.0 - 0.7 * metal;
+    vec3 tinted = mix(vec3(1.0), base, metal);
+    vec3 halfway = normalize(uLightDir - view);
+    float highlight = pow(max(dot(n, halfway), 0.0), mix(6.0, 240.0, gloss * gloss));
+    highlight *= (0.04 + 1.5 * gloss) * step(0.0, ndl) * sunlit;
+    vec3 bounce = reflect(view, n);
+    vec3 above = mix(uFogHorizon, uFogZenith, pow(clamp(bounce.y, 0.0, 1.0), 0.6));
+    vec3 around = mix(uGroundLight * 0.4, above, smoothstep(-0.2, 0.12, bounce.y));
+    float glance = 1.0 - clamp(dot(n, -view), 0.0, 1.0);
+    glance *= glance * glance * glance * glance;
+    float mirror = gloss * mix(0.04 + 0.96 * glance, 0.9, metal);
+    col += tinted * (uSunColor * highlight + around * mirror * open) * (1.0 - unlit);
+  #endif
 
   // Optional surface grid, in authored Unit coordinates so the lines follow the
   // geometry rather than the screen.

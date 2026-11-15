@@ -1,4 +1,4 @@
-import type { BufferGeometry } from 'three';
+import { BufferAttribute, type BufferGeometry } from 'three';
 import { RoundedBoxGeometry as ThreeRoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -32,4 +32,22 @@ export class RoundedBoxGeometry extends ThreeRoundedBoxGeometry {
   constructor(width = 1, height = 1, depth = 1, segments = 2, radius = 0.1) {
     super(width, height, depth, Math.max(1, Math.min(segments, Math.ceil(radius / 0.02))), radius);
   }
+}
+
+export function grained(
+  geometry: BufferGeometry,
+  axis: 'x' | 'y' | 'z',
+  across = 70,
+  along = 5,
+): BufferGeometry {
+  const position = geometry.attributes.position;
+  const out = new Float32Array(position.count * 3);
+  const offset = [Math.random() * 40, Math.random() * 40, Math.random() * 40];
+  const scale = [across, across, across];
+  scale['xyz'.indexOf(axis)] = along;
+  for (let i = 0; i < position.count; i++) {
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = position.getComponent(i, c) * scale[c] + offset[c];
+  }
+  geometry.setAttribute('grain', new BufferAttribute(out, 3));
+  return geometry;
 }
