@@ -1,148 +1,131 @@
 import {
+  BoxGeometry,
   CylinderGeometry,
+  ExtrudeGeometry,
+  Path,
   PlaneGeometry,
+  Shape,
+  SphereGeometry,
   TorusGeometry,
+  Vector3,
   type BufferGeometry,
 } from 'three';
-import { RoundedBoxGeometry } from '../geometry';
-import { HyperObject, type GyroVector, type HyperWorld } from '../../engine';
-import { merge } from '../geometry';
-import { makeTextTexture } from '../text';
+import type { HyperMaterialOptions } from '../../engine';
+import { box, lathe, merge, pos, rod, roundedRect, type Part } from '../geometry';
+import { GILDING, intoRegion } from './kennelArt';
 
-/**
- * Security, minor exhibits: what stands beside the camera mast.
- *
- * A safe with `.env` stencilled on the door — the file that stays in the
- * safe — and a barbed-wire perimeter around the whole station. The wire is
- * waist-high and sparse: it would stop nobody, which is accurate, because the
- * cameras already saw you coming.
- */
+const PAINT: HyperMaterialOptions = { color: 0x6c7a92, ambient: 0.58, gloss: 0.5, metal: 0.2 };
+const SKIRT: HyperMaterialOptions = { color: 0x4d5562, ambient: 0.55, gloss: 0.35, metal: 0.2 };
+const BRASS: HyperMaterialOptions = { color: 0xe9cb7a, ambient: 0.58, gloss: 0.62, metal: 0.9 };
+const DIAL: HyperMaterialOptions = { color: 0x2d3036, ambient: 0.55, gloss: 0.55 };
+const TICK: HyperMaterialOptions = { color: 0xf4f1e6, ambient: 0.85, gloss: 0.05 };
+const CONCRETE: HyperMaterialOptions = { color: 0xc9c7c0, ambient: 0.62, gloss: 0.03 };
 
-/** Half-extent of the fenced square, centred on the mast. */
-const FENCE = 2.1;
-const WIRE_HEIGHTS = [0.42, 0.72, 1.02];
+const PLINTH = 0.14;
+const BODY_W = 0.56;
+const BODY_H = 0.72;
+const BODY_D = 0.48;
+const BODY_Y = PLINTH + 0.06 + BODY_H / 2;
+const DOOR_FACE = BODY_D / 2 + 0.012 + 0.03;
 
-function buildFence(): { posts: BufferGeometry; wire: BufferGeometry } {
-  const posts: BufferGeometry[] = [];
-  const wire: BufferGeometry[] = [];
-
-  // Posts: corners and mid-spans.
-  const postSpots: Array<[number, number]> = [];
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) postSpots.push([sx * FENCE, sz * FENCE]);
-  }
-  for (const s of [-1, 1]) {
-    postSpots.push([s * FENCE, 0]);
-    postSpots.push([0, s * FENCE]);
-  }
-  for (const [x, z] of postSpots) {
-    const post = new CylinderGeometry(0.028, 0.036, 1.18, 10);
-    post.translate(x, 0.59, z);
-    posts.push(post);
-  }
-
-  // Wires: three strands per side, plus barbs twisted onto the top strand.
-  for (const [axis, fixed] of [['x', -1], ['x', 1], ['z', -1], ['z', 1]] as const) {
-    for (const y of WIRE_HEIGHTS) {
-      const strand = new CylinderGeometry(0.011, 0.011, FENCE * 2, 6);
-      if (axis === 'x') {
-        strand.rotateZ(Math.PI / 2);
-        strand.translate(0, y, fixed * FENCE);
-      } else {
-        strand.rotateX(Math.PI / 2);
-        strand.translate(fixed * FENCE, y, 0);
-      }
-      wire.push(strand);
-    }
-    // Barbs: little crossed spikes along the top wire.
-    const yTop = WIRE_HEIGHTS[WIRE_HEIGHTS.length - 1];
-    for (let i = -3; i <= 3; i++) {
-      const along = (i / 3.5) * FENCE;
-      for (const tilt of [Math.PI / 4, -Math.PI / 4]) {
-        const barb = new CylinderGeometry(0.005, 0.001, 0.085, 5);
-        if (axis === 'x') {
-          barb.rotateX(tilt);
-          barb.translate(along, yTop, fixed * FENCE);
-        } else {
-          barb.rotateZ(tilt);
-          barb.translate(fixed * FENCE, yTop, along);
-        }
-        wire.push(barb);
-      }
-    }
-  }
-
-  return { posts: merge(posts), wire: merge(wire) };
+function faced(profile: Array<[number, number]>, segments: number, x: number, y: number, z: number): BufferGeometry {
+  return pos(lathe(profile, segments).rotateX(Math.PI / 2), x, y, z);
 }
 
-export function buildVault(
-  world: HyperWorld,
-  at: GyroVector,
-  yaw: number,
-): HyperObject {
-  const object = new HyperObject(at);
-  object.rotation.y = yaw;
+export function safe(): { parts: Part[]; gilding: BufferGeometry } {
+  const parts: Part[] = [];
 
-  // ---- concrete pad, so the safe sits on something poured, not on grass.
-  const pad = new RoundedBoxGeometry(1.1, 0.1, 1.1, 2, 0.02);
-  pad.translate(1.15, 0.05, 0.1);
-  object.addGeometry(world.shared, pad, { color: 0xaaa9a2, ambient: 0.6 });
+  parts.push([pos(box(0.74, PLINTH, 0.66, 0.014), 0, PLINTH / 2, 0), CONCRETE]);
+  parts.push([pos(box(BODY_W + 0.04, 0.06, BODY_D + 0.04, 0.01), 0, PLINTH + 0.03, 0), SKIRT]);
+  parts.push([pos(box(BODY_W, BODY_H, BODY_D, 0.024), 0, BODY_Y, 0), PAINT]);
+  parts.push([pos(box(BODY_W + 0.02, 0.03, BODY_D + 0.02, 0.01), 0, BODY_Y + BODY_H / 2 - 0.005, 0), SKIRT]);
+  parts.push([pos(box(0.5, 0.66, 0.012, 0.004), 0, BODY_Y, BODY_D / 2 + 0.006), SKIRT]);
+  parts.push([pos(box(0.45, 0.61, 0.03, 0.01), 0, BODY_Y, DOOR_FACE - 0.015), PAINT]);
 
-  // ---- the safe: rounded body, proud door, spoked wheel, stencilled label.
-  // Turned a few degrees toward the path so the door catches the eye.
-  const SAFE_X = 1.15;
-  const SAFE_Z = 0.1;
-  const TURN = -0.22;
-
-  const body = new RoundedBoxGeometry(0.68, 0.8, 0.64, 3, 0.035);
-  body.translate(0, 0.5, 0);
-  const door = new RoundedBoxGeometry(0.54, 0.64, 0.05, 2, 0.02);
-  door.translate(0, 0.52, 0.315);
-  const hinge = new CylinderGeometry(0.022, 0.022, 0.56, 8);
-  hinge.translate(-0.3, 0.52, 0.31);
-
-  const wheelRing = new TorusGeometry(0.075, 0.014, 8, 18);
-  wheelRing.translate(0.08, 0.46, 0.36);
-  const hub = new CylinderGeometry(0.02, 0.02, 0.06, 10);
-  hub.rotateX(Math.PI / 2);
-  hub.translate(0.08, 0.46, 0.355);
-  const spokes: BufferGeometry[] = [];
-  for (let i = 0; i < 3; i++) {
-    const spoke = new CylinderGeometry(0.009, 0.009, 0.15, 6);
-    spoke.rotateZ((i / 3) * Math.PI);
-    spoke.translate(0.08, 0.46, 0.36);
-    spokes.push(spoke);
+  const HINGE_X = -0.243;
+  const hinges: BufferGeometry[] = [];
+  for (const sy of [-1, 1]) {
+    const y = BODY_Y + sy * 0.19;
+    hinges.push(pos(new CylinderGeometry(0.017, 0.017, 0.11, 12), HINGE_X, y, DOOR_FACE - 0.012));
+    for (const end of [-1, 1]) {
+      hinges.push(pos(new SphereGeometry(0.019, 8, 4), HINGE_X, y + end * 0.062, DOOR_FACE - 0.012));
+    }
+    hinges.push(pos(box(0.075, 0.085, 0.006, 0.002), HINGE_X + 0.04, y, DOOR_FACE + 0.003));
+    for (const bolt of [-1, 1]) {
+      hinges.push(
+        pos(new CylinderGeometry(0.006, 0.006, 0.004, 6).rotateX(Math.PI / 2), HINGE_X + 0.055, y + bolt * 0.026, DOOR_FACE + 0.008),
+      );
+    }
   }
+  parts.push([merge(hinges), BRASS]);
 
-  const steel = merge([body, door, hinge]);
-  steel.rotateY(TURN);
-  steel.translate(SAFE_X, 0.1, SAFE_Z);
-  object.addGeometry(world.shared, steel, { color: 0x555c66, ambient: 0.48 });
+  const DIAL_X = 0.075;
+  const HANDLE_X = -0.115;
+  const FIT_Y = BODY_Y + 0.01;
+  parts.push([
+    faced([[0.001, 0], [0.066, 0], [0.066, 0.006], [0.058, 0.012], [0.001, 0.012]], 24, DIAL_X, FIT_Y, DOOR_FACE),
+    BRASS,
+  ]);
+  parts.push([
+    faced([[0.05, 0.012], [0.05, 0.02], [0.046, 0.024], [0.001, 0.024]], 24, DIAL_X, FIT_Y, DOOR_FACE),
+    DIAL,
+  ]);
+  parts.push([
+    faced([[0.024, 0.024], [0.026, 0.03], [0.026, 0.05], [0.022, 0.056], [0.001, 0.056]], 12, DIAL_X, FIT_Y, DOOR_FACE),
+    BRASS,
+  ]);
+  const ticks: BufferGeometry[] = [];
+  for (let i = 0; i < 20; i++) {
+    const long = i % 5 === 0 ? 0.011 : 0.006;
+    const tick = pos(new BoxGeometry(0.0026, long, 0.0016), 0, 0.045 - long / 2, 0);
+    ticks.push(pos(tick.rotateZ((i / 20) * Math.PI * 2), DIAL_X, FIT_Y, DOOR_FACE + 0.0245));
+  }
+  parts.push([merge(ticks), TICK]);
+  parts.push([pos(new BoxGeometry(0.007, 0.013, 0.006), DIAL_X, FIT_Y + 0.061, DOOR_FACE + 0.011), DIAL]);
 
-  const brass = merge([wheelRing, hub, ...spokes]);
-  brass.rotateY(TURN);
-  brass.translate(SAFE_X, 0.1, SAFE_Z);
-  object.addGeometry(world.shared, brass, { color: 0xc9cdd4, ambient: 0.55 });
+  const handle: BufferGeometry[] = [
+    faced([[0.001, 0], [0.034, 0], [0.034, 0.008], [0.022, 0.016], [0.02, 0.04], [0.001, 0.04]], 16, HANDLE_X, FIT_Y, DOOR_FACE),
+  ];
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + 0.26 + (i / 3) * Math.PI * 2;
+    const hub = new Vector3(HANDLE_X, FIT_Y, DOOR_FACE + 0.028);
+    const tip = new Vector3(HANDLE_X + Math.cos(a) * 0.076, FIT_Y + Math.sin(a) * 0.076, DOOR_FACE + 0.028);
+    handle.push(rod(hub, tip, 0.0075, 0.006, 8));
+    handle.push(pos(new SphereGeometry(0.014, 8, 5), tip.x, tip.y, tip.z));
+  }
+  parts.push([merge(handle), BRASS]);
 
-  const label = new PlaneGeometry(0.3, 0.11, 1, 1);
-  label.translate(-0.06, 0.68, 0.345);
-  label.rotateY(TURN);
-  label.translate(SAFE_X, 0.1, SAFE_Z);
-  object.addGeometry(world.shared, label, {
-    map: makeTextTexture('.env', { color: '#e8edf2', width: 512, height: 192 }),
-    color: 0xffffff,
-    ambient: 0.9,
-    alphaTest: 0.3,
-    alphaBlend: true,
-    castShadow: false,
-    receiveShadow: false,
-  });
+  const frames: BufferGeometry[] = [];
+  const fittings: BufferGeometry[] = [];
+  const panels: Array<[number, number, number, number]> = [
+    [0.42, Math.PI, 0, -BODY_D / 2],
+    [0.34, Math.PI / 2, BODY_W / 2, 0],
+    [0.34, -Math.PI / 2, -BODY_W / 2, 0],
+  ];
+  for (const [wide, turn, x, z] of panels) {
+    const ring = roundedRect(new Shape(), wide, 0.56, 0.03);
+    ring.holes.push(roundedRect(new Path(), wide - 0.05, 0.51, 0.018));
+    const frame = new ExtrudeGeometry(ring, { depth: 0.006, bevelEnabled: false, curveSegments: 4 });
+    frames.push(frame.rotateY(turn).translate(x, BODY_Y, z));
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const rivet = new SphereGeometry(0.008, 6, 2, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2);
+        fittings.push(rivet.translate(sx * (wide / 2 - 0.013), sy * 0.267, 0.006).rotateY(turn).translate(x, BODY_Y, z));
+      }
+    }
+    if (x !== 0) {
+      const grip = new TorusGeometry(0.055, 0.007, 6, 12, Math.PI).rotateZ(Math.PI).translate(0, 0.085, 0.012);
+      fittings.push(grip.rotateY(turn).translate(x, BODY_Y, z));
+      for (const sx of [-1, 1]) {
+        fittings.push(box(0.024, 0.03, 0.02, 0.004).translate(sx * 0.055, 0.085, 0.01).rotateY(turn).translate(x, BODY_Y, z));
+      }
+    }
+  }
+  parts.push([merge(frames), SKIRT]);
+  parts.push([merge(fittings), BRASS]);
 
-  // ---- the perimeter.
-  const fence = buildFence();
-  object.addGeometry(world.shared, fence.posts, { color: 0x8b9199, ambient: 0.5 });
-  object.addGeometry(world.shared, fence.wire, { color: 0xb9bfc7, ambient: 0.52 });
+  const gilding = intoRegion(new PlaneGeometry(0.44, 0.58, 2, 2), GILDING);
+  gilding.translate(0, BODY_Y, DOOR_FACE + 0.004);
 
-  world.add(object);
-  return object;
+  return { parts, gilding };
 }

@@ -3,14 +3,14 @@ import type { Poi } from '../placement';
 import { buildCabinets } from './cabinets';
 import { buildCameraMast, type Watcher } from './cameras';
 import { buildContact } from './contact';
-import { buildConveyor } from './conveyor';
+import { buildDeployButton } from './deployButton';
 import { buildGears } from './gears';
+import { buildKennel } from './kennel';
 import { buildMailbox } from './mailbox';
 import { buildMonitor } from './monitor';
-import { buildRack } from './rack';
 import { buildSchoolDesk } from './schoolDesk';
 import { buildSignpost } from './signpost';
-import { buildVault } from './vault';
+import { buildTrolley } from './trolley';
 import { buildWorldModel } from './worldModel';
 
 /**
@@ -63,20 +63,22 @@ export const EXHIBITS: Record<
     out.tickers.push(cabinets.tick);
   },
   infrastructure(world, at, yaw, out) {
-    const rack = buildRack(world, at, yaw);
-    out.objects.push(rack.object);
-    out.tickers.push(rack.tick);
+    const trolley = buildTrolley(world, at, yaw);
+    out.objects.push(trolley.object);
+    out.tickers.push(trolley.tick);
   },
   shipping(world, at, yaw, out) {
-    const conveyor = buildConveyor(world, at, yaw);
-    out.objects.push(conveyor.object);
-    out.tickers.push(conveyor.tick);
+    const deploy = buildDeployButton(world, at, yaw);
+    out.objects.push(deploy.object);
+    out.tickers.push(deploy.tick);
   },
   security(world, at, yaw, out) {
     const mast = buildCameraMast(world, at, yaw);
     out.objects.push(mast.object);
     out.watchers.push(...mast.watchers);
-    out.objects.push(buildVault(world, at, yaw));
+    const kennel = buildKennel(world, at, yaw);
+    out.objects.push(kennel.object);
+    out.tickers.push(kennel.tick);
   },
   contact(world, at, yaw, out) {
     const board = buildContact(world, at, yaw);

@@ -114,7 +114,7 @@ const DEFS: StationDef[] = [
   {
     id: 'security',
     title: L('Security', 'Güvenlik'),
-    object: L('Beware of the dog', 'Dikkat köpek çıkabilir'),
+    object: L('9999 days since the last incident', 'Son kazadan bu yana: 9999 gün'),
     body: L(
       'Security is mostly knowing not to do the stupid thing. "Don’t put .env in the public folder." "Mind your authentication and your authorization."... Every day, every second. Done right, you look like you are doing nothing at all. But one second of an open hole is enough to make you question your entire life.',
       'Güvenlik genelde aptalca şeyi yapmamayı bilmektir. ".env’i public klasöre koyma", "authentication ve authorization’a dikkat et"... Her gün, Her saniye. Doğru yapıldığında ise hiç iş yapmıyormuş gibi görünürsünüz. Ama bir saniyelik güvenlik açığı size hayatı sorgulatmaya yeter.',
