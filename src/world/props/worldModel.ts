@@ -1,26 +1,37 @@
 import {
   ConeGeometry,
   CylinderGeometry,
+  ExtrudeGeometry,
   Group,
-  LatheGeometry,
+  Path,
+  PlaneGeometry,
+  Shape,
   SphereGeometry,
   TorusGeometry,
-  Vector2,
   Vector3,
+  type BufferGeometry,
   type Texture,
 } from 'three';
-import { RoundedBoxGeometry } from '../geometry';
-import { GyroVector, HM, HyperObject, type HyperWorld } from '../../engine';
+import { aimed, box, lathe, merge, moved, pos, rod, type Part } from '../geometry';
+import {
+  GyroVector,
+  HM,
+  HyperObject,
+  type HyperMaterialOptions,
+  type HyperWorld,
+} from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
 import { STATIONS } from '../../content/stations';
 import { EXHIBIT_LATERAL, SENTRIES } from '../layout';
 import { ARCH_AT, PORTRAIT_AT } from '../skeleton';
 import { localizedCanvasTexture } from '../text';
 import { easelPole, easelSpots } from './easels';
+import { pencil } from './stationery';
 import { triangleCorners } from './triangle';
 
 /**
- * Station 3: architecture — a desk globe of THIS world, under a canopy.
+ * Station 3: architecture — a floor globe of THIS world, beside the drafting
+ * table its plan is pinned to.
  *
  * Not an illustration: the map is drawn from the same data that places the
  * real things. The path is the real path, the dots are the real stations,
@@ -41,7 +52,7 @@ import { triangleCorners } from './triangle';
  * Match a number here to a number out there and the map is decoded.
  */
 
-const GLOBE_R = 0.38;
+const GLOBE_R = 0.42;
 /**
  * The cradle's lean — ring, pole caps and stand. Purely cosmetic furniture,
  * exactly as a desk globe's fork is.
@@ -83,12 +94,15 @@ function toUV(g: Vector3): { u: number; v: number } {
   return { u, v };
 }
 
+// Marks are painted turned a quarter, because MAP_ROTATION lays the map's pole axis on its side.
+const MARK_TURN = Math.PI / 2;
+
 const MAP_W = 2048;
 const MAP_H = 1024;
 const MONO = 'ui-monospace, Consolas, monospace';
 
-const TURF = '#7fa968';
-const PATH = '#c9bd9d';
+const TURF = '#b9d39c';
+const PATH = '#f1e8cb';
 const CREAM = '#efece3';
 const CASE = '#5c574c';
 const INK = '#20262c';
@@ -126,6 +140,7 @@ function atPoint(ctx: CanvasRenderingContext2D, g: Vector3, paint: Paint): void 
     ctx.save();
     ctx.translate(u * MAP_W + dx, v * MAP_H);
     ctx.scale(s, 1);
+    ctx.rotate(MARK_TURN);
     paint(ctx);
     ctx.restore();
   }
@@ -293,7 +308,7 @@ function paintMap(ctx: CanvasRenderingContext2D, unitScale: number): void {
     const rx = (Math.sin(i * 127.1) * 0.5 + 0.5) * W;
     const ry = (Math.sin(i * 311.7) * 0.5 + 0.5) * H;
     const rr = 16 + (Math.sin(i * 74.3) * 0.5 + 0.5) * 52;
-    ctx.fillStyle = i % 2 ? '#78a161' : '#86af6f';
+    ctx.fillStyle = i % 2 ? '#afcc90' : '#c4dba8';
     ctx.beginPath();
     ctx.ellipse(rx, ry, rr, rr * 0.6, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -302,7 +317,7 @@ function paintMap(ctx: CanvasRenderingContext2D, unitScale: number): void {
   // ---------------- graticule: rings of distance from spawn and spokes of
   // bearing, every 30 degrees. Faint, but it is the thing that turns a green
   // ball into a globe, and it gives the eye somewhere to measure from.
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
   ctx.lineWidth = 2;
   for (let k = 1; k < 6; k++) {
     const y = (k / 6) * H;
@@ -411,6 +426,537 @@ function worldMapTexture(unitScale: number): Texture {
   return localizedCanvasTexture(MAP_W, MAP_H, (ctx) => paintMap(ctx, unitScale));
 }
 
+const PLAN_W = 1536;
+const PLAN_H = 1024;
+const PLAN_R = 318;
+const PLAN_Y = 452;
+const PLAN_NEAR = 404;
+const PLAN_FAR = 1132;
+const SHEET = '#6a9bd2';
+const LINE = '#f4f8ff';
+const FAINT = 'rgba(244, 248, 255, 0.32)';
+
+interface Plotted {
+  x: number;
+  y: number;
+  far: boolean;
+}
+
+/** Two hemispheres side by side, each drawn flat around its own pole: spawn on the left, the antipode on the right. */
+function plot(g: Vector3): Plotted {
+  const dist = Math.acos(Math.max(-1, Math.min(1, g.y)));
+  const bearing = Math.atan2(g.x, -g.z);
+  const far = dist > Math.PI / 2;
+  const r = ((far ? Math.PI - dist : dist) / (Math.PI / 2)) * PLAN_R;
+  return {
+    x: (far ? PLAN_FAR : PLAN_NEAR) + (far ? -1 : 1) * Math.sin(bearing) * r,
+    y: PLAN_Y - Math.cos(bearing) * r,
+    far,
+  };
+}
+
+function planLine(ctx: CanvasRenderingContext2D, pts: Vector3[]): void {
+  ctx.beginPath();
+  let side: boolean | null = null;
+  for (const g of pts) {
+    const p = plot(g);
+    if (p.far === side) ctx.lineTo(p.x, p.y);
+    else ctx.moveTo(p.x, p.y);
+    side = p.far;
+  }
+  ctx.stroke();
+}
+
+function paintPlan(ctx: CanvasRenderingContext2D, unitScale: number): void {
+  const W = PLAN_W;
+  const H = PLAN_H;
+  ctx.fillStyle = SHEET;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(244, 248, 255, 0.09)';
+  ctx.lineWidth = 2;
+  for (let x = 64; x < W; x += 64) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 64; y < H; y += 64) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 5;
+  ctx.strokeRect(26, 26, W - 52, H - 52);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(40, 40, W - 80, H - 80);
+
+  for (const cx of [PLAN_NEAR, PLAN_FAR]) {
+    ctx.strokeStyle = FAINT;
+    ctx.lineWidth = 2;
+    for (const f of [1 / 3, 2 / 3]) {
+      ctx.beginPath();
+      ctx.arc(cx, PLAN_Y, PLAN_R * f, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI;
+      ctx.beginPath();
+      ctx.moveTo(cx - Math.cos(a) * PLAN_R, PLAN_Y - Math.sin(a) * PLAN_R);
+      ctx.lineTo(cx + Math.cos(a) * PLAN_R, PLAN_Y + Math.sin(a) * PLAN_R);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = LINE;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, PLAN_Y, PLAN_R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 9;
+  ctx.setLineDash([18, 10]);
+  const aisle: Vector3[] = [];
+  for (let i = 0; i <= 240; i++) aisle.push(pathVec((i / 240) * Math.PI * 2, 0));
+  planLine(ctx, aisle);
+  ctx.setLineDash([]);
+
+  ctx.lineWidth = 4;
+  for (const s of STATIONS) {
+    const along = s.at * unitScale;
+    const lateral = Math.sign(s.lateral) * EXHIBIT_LATERAL * unitScale;
+    const spur: Vector3[] = [];
+    for (let i = 0; i <= 6; i++) spur.push(pathVec(along, (lateral * i) / 6));
+    planLine(ctx, spur);
+  }
+
+  const C = triangleCorners();
+  ctx.lineWidth = 5;
+  for (let s = 0; s < 3; s++) {
+    const side: Vector3[] = [];
+    for (let i = 0; i <= 48; i++) {
+      const f = i / 48;
+      side.push(C[s].clone().multiplyScalar(1 - f).addScaledVector(C[(s + 1) % 3], f).normalize());
+    }
+    planLine(ctx, side);
+  }
+
+  const mark = (g: Vector3, paint: (x: number, y: number) => void): void => {
+    const p = plot(g);
+    paint(p.x, p.y);
+  };
+  const caption = (text: string, x: number, y: number, size = 22, align: CanvasTextAlign = 'center'): void => {
+    ctx.font = `600 ${size}px ${MONO}`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = SHEET;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = LINE;
+    ctx.fillText(text, x, y);
+  };
+
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 3;
+  const centroid = new Vector3(1, 0, 0);
+  mark(centroid, (x, y) => {
+    ctx.fillStyle = SHEET;
+    ctx.fillRect(x - 13, y - 13, 26, 26);
+    ctx.strokeRect(x - 13, y - 13, 26, 26);
+    ctx.fillStyle = LINE;
+    ctx.fillRect(x - 13, y - 13, 13, 13);
+    ctx.fillRect(x, y, 13, 13);
+    caption(t(L('chess', 'satranç')), x, y + 32, 20);
+  });
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 3;
+  for (const spot of easelSpots()) {
+    mark(spot, (x, y) => {
+      ctx.fillStyle = SHEET;
+      ctx.fillRect(x - 8, y - 8, 16, 16);
+      ctx.strokeRect(x - 8, y - 8, 16, 16);
+    });
+  }
+  for (const [at, lateral] of SENTRIES) {
+    mark(pathVec(at * unitScale, lateral * unitScale), (x, y) => {
+      ctx.fillStyle = SHEET;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 10);
+      ctx.lineTo(x + 9, y + 7);
+      ctx.lineTo(x - 9, y + 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    });
+  }
+  mark(pathVec(ARCH_AT * unitScale, 0), (x, y) => {
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, Math.PI, 0);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+  });
+  mark(pathVec(PORTRAIT_AT * unitScale, 0), (x, y) => {
+    ctx.fillStyle = LINE;
+    ctx.beginPath();
+    ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fill();
+    caption(t(L('me', 'ben')), x + 34, y, 20);
+  });
+
+  for (const s of STATIONS) {
+    mark(pathVec(s.at * unitScale, Math.sign(s.lateral) * EXHIBIT_LATERAL * unitScale), (x, y) => {
+      ctx.fillStyle = SHEET;
+      ctx.strokeStyle = LINE;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x, y, 21, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = `700 22px ${MONO}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = LINE;
+      ctx.fillText(String(s.n).padStart(2, '0'), x, y + 1);
+    });
+  }
+
+  ctx.letterSpacing = '3px';
+  caption(t(L('NEAR SIDE · SPAWN AT CENTRE', 'YAKIN YARI · MERKEZ BAŞLANGIÇ')), PLAN_NEAR, PLAN_Y + PLAN_R + 34, 21);
+  caption(t(L('FAR SIDE · ANTIPODE AT CENTRE', 'UZAK YARI · MERKEZ ANTİPOT')), PLAN_FAR, PLAN_Y + PLAN_R + 34, 21);
+
+  const dimY = PLAN_Y - PLAN_R - 30;
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(PLAN_NEAR - PLAN_R, dimY);
+  ctx.lineTo(PLAN_NEAR + PLAN_R, dimY);
+  for (const sx of [-1, 1]) {
+    const x = PLAN_NEAR + sx * PLAN_R;
+    ctx.moveTo(x, dimY - 10);
+    ctx.lineTo(x, dimY + 22);
+    ctx.moveTo(x, dimY);
+    ctx.lineTo(x - sx * 14, dimY - 6);
+    ctx.moveTo(x, dimY);
+    ctx.lineTo(x - sx * 14, dimY + 6);
+  }
+  ctx.stroke();
+  caption('π', PLAN_NEAR, dimY, 26);
+
+  const bx = W - 492;
+  const by = H - 196;
+  ctx.fillStyle = SHEET;
+  ctx.fillRect(bx, by, 452, 156);
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(bx, by, 452, 156);
+  ctx.beginPath();
+  ctx.moveTo(bx, by + 62);
+  ctx.lineTo(bx + 452, by + 62);
+  ctx.moveTo(bx, by + 110);
+  ctx.lineTo(bx + 452, by + 110);
+  ctx.moveTo(bx + 250, by + 62);
+  ctx.lineTo(bx + 250, by + 156);
+  ctx.stroke();
+  ctx.fillStyle = LINE;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.letterSpacing = '4px';
+  ctx.font = `700 34px ${MONO}`;
+  ctx.fillText(t(L('SITE PLAN', 'VAZİYET PLANI')), bx + 20, by + 32);
+  ctx.letterSpacing = '1px';
+  ctx.font = `600 21px ${MONO}`;
+  ctx.fillText('muratozcan.me', bx + 20, by + 86);
+  ctx.fillText('K = +1', bx + 270, by + 86);
+  ctx.fillText(t(L('SCALE 1 : 1', 'ÖLÇEK 1 : 1')), bx + 20, by + 134);
+  ctx.fillText('2π ≡ 0', bx + 270, by + 134);
+  ctx.letterSpacing = '0px';
+
+  ctx.font = `500 20px ${MONO}`;
+  ctx.fillStyle = LINE;
+  ctx.textAlign = 'left';
+  [
+    t(L('Every corner of the triangle is 90°.', 'Üçgenin her köşesi 90°.')),
+    t(L('Walk straight and you come back.', 'Dümdüz yürürsen geri dönersin.')),
+  ].forEach((line, i) => ctx.fillText(line, 70, H - 108 + i * 30));
+}
+
+const PAINT: HyperMaterialOptions = { color: 0x8793a0, ambient: 0.7, gloss: 0.5 };
+const LAMINATE: HyperMaterialOptions = { color: 0xfbfaf5, ambient: 0.82, gloss: 0.4 };
+const ALUMINIUM: HyperMaterialOptions = { color: 0xe2e5e8, ambient: 0.7, gloss: 0.45, metal: 0.7 };
+const CHROME: HyperMaterialOptions = { color: 0xf0f2f4, ambient: 0.68, gloss: 0.75, metal: 1 };
+const BRASS: HyperMaterialOptions = { color: 0xe9cb7a, ambient: 0.6, gloss: 0.6, metal: 0.9 };
+const RUBBER: HyperMaterialOptions = { color: 0x5b5e63, ambient: 0.62, gloss: 0.12 };
+const VINYL: HyperMaterialOptions = { color: 0x62666d, ambient: 0.64, gloss: 0.42 };
+const BLACK: HyperMaterialOptions = { color: 0x666c74, ambient: 0.66, gloss: 0.55 };
+const ACRYLIC: HyperMaterialOptions = { color: 0xe6eff0, ambient: 0.8, gloss: 0.7 };
+const PAPER: HyperMaterialOptions = { color: 0xf8f5ea, ambient: 0.72, gloss: 0.06 };
+const TAPE: HyperMaterialOptions = { color: 0xfbeebf, ambient: 0.84, gloss: 0.1 };
+const ENAMEL: HyperMaterialOptions = { color: 0x78b596, ambient: 0.62, gloss: 0.6 };
+const BLUEPRINT: HyperMaterialOptions = { color: 0x6a9bd2, ambient: 0.7, gloss: 0.08 };
+
+const BOARD_W = 1.5;
+const BOARD_H = 1.0;
+const BOARD_T = 0.03;
+const BOARD_TILT = 0.61;
+const BOARD_PIVOT = 1.05;
+const SHEET_AT: [number, number] = [0.02, 0.035];
+const SHEET_SIZE: [number, number] = [1.2, 0.8];
+
+function onBoard(g: BufferGeometry): BufferGeometry {
+  return g.rotateX(-BOARD_TILT).translate(0, BOARD_PIVOT, 0);
+}
+
+function draftingTable(): Part[] {
+  const face = BOARD_T / 2;
+  const mounted: Part[] = [
+    [box(BOARD_W, BOARD_H, BOARD_T, 0.003), LAMINATE],
+    [pos(box(BOARD_W + 0.024, 0.012, BOARD_T + 0.006, 0.002), 0, BOARD_H / 2 + 0.004, 0), ALUMINIUM],
+    [pos(box(BOARD_W + 0.024, 0.02, 0.075, 0.003), 0, -BOARD_H / 2 - 0.008, face + 0.016), ALUMINIUM],
+    [pos(box(SHEET_SIZE[0], SHEET_SIZE[1], 0.003, 0.001), SHEET_AT[0], SHEET_AT[1], face + 0.0015), PAPER],
+    [pos(box(1.38, 0.05, 0.004, 0.001), -0.06, -BOARD_H / 2 + 0.03, face + 0.004), ACRYLIC],
+    [pos(box(0.036, 0.24, 0.024, 0.004), -BOARD_W / 2 - 0.022, -BOARD_H / 2 + 0.03, face - 0.004), BLACK],
+    [pos(box(0.055, 0.022, 0.026, 0.005), 0.28, -BOARD_H / 2 + 0.014, face + 0.022), { color: 0xf2a39b, ambient: 0.62, gloss: 0.1 }],
+  ];
+  for (const sx of [-1, 1]) {
+    mounted.push([
+      pos(box(0.012, BOARD_H + 0.008, BOARD_T + 0.006, 0.002), sx * (BOARD_W / 2 + 0.004), 0, 0),
+      ALUMINIUM,
+    ]);
+    for (const sy of [-1, 1]) {
+      const tape = box(0.085, 0.024, 0.0012, 0.0004).rotateZ(-sx * sy * (Math.PI / 4));
+      mounted.push([
+        pos(
+          tape,
+          SHEET_AT[0] + sx * (SHEET_SIZE[0] / 2 - 0.008),
+          SHEET_AT[1] + sy * (SHEET_SIZE[1] / 2 - 0.008),
+          face + 0.0086,
+        ),
+        TAPE,
+      ]);
+    }
+  }
+  for (const [colour, x] of [[0xf2c84b, 0.5], [0xe8604e, 0.02]] as Array<[number, number]>) {
+    mounted.push(...moved(pencil(colour), x, -BOARD_H / 2 + 0.002, face + 0.018));
+  }
+  for (const [g] of mounted) onBoard(g);
+
+  const parts: Part[] = [...mounted];
+  const X = 0.62;
+  const TUBE = 0.022;
+  for (const sx of [-1, 1]) {
+    const x = sx * X;
+    parts.push([rod(new Vector3(x, 0.03, -0.42), new Vector3(x, 0.03, 0.36), TUBE, TUBE, 10), PAINT]);
+    for (const z of [-0.43, 0.37]) {
+      parts.push([pos(new CylinderGeometry(0.026, 0.026, 0.04, 10).rotateX(Math.PI / 2), x, 0.03, z), RUBBER]);
+    }
+    parts.push([rod(new Vector3(x, 0.03, -0.05), new Vector3(x, 1.04, -0.05), TUBE, TUBE, 10), PAINT]);
+    parts.push([rod(new Vector3(x, 0.03, -0.33), new Vector3(x, 1.285, -0.188), 0.016, 0.016, 8), PAINT]);
+    parts.push([pos(box(0.05, 0.07, 0.06, 0.006), x, 1.035, -0.035), PAINT]);
+    const knob = lathe([[0.001, 0], [0.012, 0], [0.012, 0.012], [0.034, 0.016], [0.036, 0.03], [0.026, 0.036], [0.001, 0.036]], 12);
+    parts.push([pos(knob.rotateZ(-sx * Math.PI / 2), x + sx * 0.024, 1.035, -0.035), BLACK]);
+  }
+  for (const [y, z, r] of [[0.12, -0.322, 0.016], [0.46, -0.05, 0.016], [0.03, 0.28, 0.018]]) {
+    parts.push([rod(new Vector3(-X, y, z), new Vector3(X, y, z), r, r, 8), PAINT]);
+  }
+
+  const trayX = X + 0.228;
+  const trayY = 0.82;
+  parts.push([pos(box(0.42, 0.006, 0.3, 0.002), trayX, trayY, 0), PAINT]);
+  for (const sz of [-1, 1]) {
+    parts.push([pos(box(0.42, 0.03, 0.006, 0.002), trayX, trayY + 0.012, sz * 0.147), PAINT]);
+  }
+  parts.push([pos(box(0.006, 0.03, 0.3, 0.002), trayX + 0.207, trayY + 0.012, 0), PAINT]);
+  parts.push([
+    rod(new Vector3(X + 0.015, trayY - 0.3, -0.05), new Vector3(trayX + 0.1, trayY - 0.003, -0.05), 0.009, 0.009, 8),
+    PAINT,
+  ]);
+
+  const top = trayY + 0.003;
+  const legs = 0.2;
+  const short = 0.12;
+  const square = new Shape();
+  square.moveTo(0, 0);
+  square.lineTo(legs, 0);
+  square.lineTo(0, short);
+  square.closePath();
+  const hole = new Path();
+  hole.moveTo(0.03, 0.03);
+  hole.lineTo(0.03, short * 0.55);
+  hole.lineTo(legs * 0.55, 0.03);
+  hole.closePath();
+  square.holes.push(hole);
+  const setSquare = new ExtrudeGeometry(square, { depth: 0.003, bevelEnabled: false });
+  setSquare.rotateX(-Math.PI / 2).rotateY(0.3);
+  parts.push([pos(setSquare, trayX - 0.17, top, 0.1), { color: 0xf6b65a, ambient: 0.66, gloss: 0.6 }]);
+
+  const hinge = new Vector3(trayX + 0.04, top + 0.007, -0.1);
+  for (const swing of [-0.22, 0.26]) {
+    const tip = new Vector3(hinge.x + Math.sin(swing) * 0.15, top + 0.004, hinge.z + Math.cos(swing) * 0.15);
+    parts.push([rod(hinge, tip, 0.005, 0.0012, 6), CHROME]);
+  }
+  parts.push([pos(new CylinderGeometry(0.009, 0.009, 0.012, 10), hinge.x, hinge.y, hinge.z), CHROME]);
+  parts.push([rod(hinge, new Vector3(hinge.x, hinge.y, hinge.z - 0.03), 0.004, 0.004, 6), BLACK]);
+  parts.push([
+    pos(
+      lathe([[0.001, 0], [0.03, 0], [0.032, 0.008], [0.032, 0.04], [0.016, 0.052], [0.016, 0.066], [0.001, 0.066]], 14),
+      trayX + 0.13,
+      top,
+      0.06,
+    ),
+    { color: 0x5b6f96, ambient: 0.6, gloss: 0.8 },
+  ]);
+
+  return parts;
+}
+
+function lamp(): Part[] {
+  const parts: Part[] = [];
+  const x = -0.62;
+  const clamp = new Vector3(x, BOARD_PIVOT + (BOARD_H / 2) * Math.cos(BOARD_TILT), -(BOARD_H / 2) * Math.sin(BOARD_TILT));
+  const foot = clamp.clone().add(new Vector3(0, 0.03, -0.03));
+  const elbow = new Vector3(x, foot.y + 0.3, foot.z - 0.12);
+  const head = new Vector3(x + 0.14, elbow.y + 0.02, elbow.z + 0.4);
+  const target = new Vector3(x + 0.42, BOARD_PIVOT + 0.1, 0);
+
+  parts.push([pos(box(0.05, 0.08, 0.07, 0.008), clamp.x, clamp.y - 0.01, clamp.z - 0.01), BLACK]);
+  for (const off of [-0.011, 0.011]) {
+    const shift = new Vector3(off, 0, 0);
+    parts.push([rod(foot.clone().add(shift), elbow.clone().add(shift), 0.005, 0.005, 6), CHROME]);
+    parts.push([rod(elbow.clone().add(shift), head.clone().add(shift), 0.005, 0.005, 6), CHROME]);
+  }
+  for (const joint of [foot, elbow, head]) {
+    parts.push([
+      pos(new CylinderGeometry(0.016, 0.016, 0.034, 10).rotateZ(Math.PI / 2), joint.x, joint.y, joint.z),
+      BLACK,
+    ]);
+  }
+
+  const outer = lathe([[0.001, 0], [0.03, 0], [0.034, 0.022], [0.106, 0.14], [0.11, 0.142]], 18);
+  const inner = lathe([[0.108, 0.142], [0.102, 0.14], [0.03, 0.024], [0.001, 0.024]], 18);
+  const bulb = new SphereGeometry(0.03, 10, 8).translate(0, 0.075, 0);
+  const aim = (g: BufferGeometry): BufferGeometry => aimed(g, head, target);
+  parts.push([aim(outer), ENAMEL]);
+  parts.push([aim(inner), { color: 0xffffff, ambient: 0.8, gloss: 0.3 }]);
+  parts.push([aim(bulb), { color: 0xfff1c4, ambient: 1, gloss: 0.01 }]);
+  return parts;
+}
+
+function stool(): Part[] {
+  const parts: Part[] = [];
+  const SEAT = 0.58;
+  parts.push([
+    pos(lathe([[0.001, 0], [0.15, 0], [0.172, 0.014], [0.174, 0.036], [0.156, 0.058], [0.09, 0.068], [0.001, 0.07]], 22), 0, SEAT, 0),
+    VINYL,
+  ]);
+  parts.push([pos(new CylinderGeometry(0.13, 0.13, 0.012, 20), 0, SEAT - 0.006, 0), BLACK]);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const floor = new Vector3(sx * 0.2, 0.012, sz * 0.2);
+      parts.push([rod(floor, new Vector3(sx * 0.1, SEAT - 0.006, sz * 0.1), 0.012, 0.012, 8), CHROME]);
+      parts.push([pos(new CylinderGeometry(0.015, 0.017, 0.022, 8), floor.x, 0.011, floor.z), RUBBER]);
+    }
+  }
+  const ringAt = 0.2;
+  const reach = Math.SQRT2 * (0.2 - (0.1 * ringAt) / SEAT);
+  parts.push([pos(new TorusGeometry(reach, 0.008, 6, 28).rotateX(Math.PI / 2), 0, ringAt, 0), CHROME]);
+  return parts;
+}
+
+function plansBin(): Part[] {
+  const parts: Part[] = [];
+  const H = 0.44;
+  const wall = (y: number): number => 0.122 + 0.026 * (y / H);
+  const WIRES = 26;
+
+  parts.push([lathe([[0.001, 0], [wall(0), 0], [wall(0.016), 0.016], [0.001, 0.016]], 22), BLACK]);
+  const mesh: BufferGeometry[] = [];
+  for (let k = 0; k < WIRES; k++) {
+    const a = (k / WIRES) * Math.PI * 2;
+    mesh.push(
+      rod(
+        new Vector3(Math.cos(a) * wall(0.01), 0.01, Math.sin(a) * wall(0.01)),
+        new Vector3(Math.cos(a) * wall(H), H, Math.sin(a) * wall(H)),
+        0.0035,
+        0.0035,
+        4,
+      ),
+    );
+  }
+  for (const y of [0.12, 0.23, 0.34]) {
+    mesh.push(pos(new TorusGeometry(wall(y), 0.0035, 4, 26).rotateX(Math.PI / 2), 0, y, 0));
+  }
+  mesh.push(pos(new TorusGeometry(wall(H), 0.007, 6, 26).rotateX(Math.PI / 2), 0, H, 0));
+  parts.push([merge(mesh), BLACK]);
+
+  const rimReach = wall(H) - 0.01;
+  const FLOOR = 0.016;
+  const rolls: Array<[number, number, number, boolean]> = [
+    [0.04, 0.74, 0.7, false],
+    [0.033, 0.62, 2.4, true],
+    [0.037, 0.82, 3.9, false],
+    [0.03, 0.66, 5.5, false],
+  ];
+  for (const [r, long, around, blueOut] of rolls) {
+    const base = 0.052;
+    const lean = Math.atan((rimReach - r - base) / (H - FLOOR));
+    const place = (geometry: BufferGeometry): BufferGeometry =>
+      geometry
+        .rotateY(around * 3)
+        .rotateZ(-lean * Math.cos(around))
+        .rotateX(lean * Math.sin(around))
+        .translate(Math.cos(around) * base, FLOOR, Math.sin(around) * base);
+    const bore = r * 0.82;
+    const out = blueOut ? BLUEPRINT : PAPER;
+    const inside = blueOut ? PAPER : BLUEPRINT;
+    parts.push([place(lathe([[r, 0], [r, long]], 16)), out]);
+    parts.push([place(lathe([[r + 0.0018, 0.01], [r + 0.0018, long - 0.006]], 6, 2.3)), out]);
+    parts.push([place(lathe([[r, long], [bore, long]], 16)), PAPER]);
+    parts.push([place(lathe([[bore, long], [bore, long - 0.28], [0.001, long - 0.28]], 16)), inside]);
+    parts.push([
+      place(new TorusGeometry(r + 0.002, 0.0028, 6, 18).rotateX(Math.PI / 2).translate(0, long * 0.74, 0)),
+      { color: 0xe39a6c, ambient: 0.68, gloss: 0.2 },
+    ]);
+  }
+  return parts;
+}
+
+const GLOBE_AT = new Vector3(1.05, 0.98, 0.2);
+
+function globeStand(): Part[] {
+  const top = GLOBE_AT.y - GLOBE_R - 0.045;
+  const parts: Part[] = [
+    [
+      lathe([[0.001, 0], [0.31, 0], [0.315, 0.012], [0.3, 0.026], [0.14, 0.05], [0.07, 0.058], [0.001, 0.058]], 28),
+      BLACK,
+    ],
+    [lathe([[0.3, 0.026], [0.304, 0.03], [0.29, 0.034]], 28), BRASS],
+    [
+      lathe(
+        [
+          [0.001, 0.05],
+          [0.05, 0.056],
+          [0.034, 0.09],
+          [0.026, 0.14],
+          [0.024, top - 0.07],
+          [0.036, top - 0.05],
+          [0.036, top - 0.03],
+          [0.026, top],
+          [0.001, top],
+        ],
+        16,
+      ),
+      CHROME,
+    ],
+    [pos(new CylinderGeometry(0.03, 0.036, 0.04, 12), 0, top + 0.016, 0), BRASS],
+  ];
+  return moved(parts, GLOBE_AT.x, 0, GLOBE_AT.z);
+}
+
 export interface WorldModelHandle {
   object: HyperObject;
   /** Moves the you-are-here pin. Called every frame by the station tickers. */
@@ -424,94 +970,70 @@ export function buildWorldModel(
 ): WorldModelHandle {
   const object = new HyperObject(at);
   object.rotation.y = yaw;
+  const put = (parts: Part[], node?: Group): void => {
+    for (const [g, opts] of parts) object.addGeometry(world.shared, g, opts, node);
+  };
 
-  // The canopy keeps this exhibit in permanent shade, so the wood is
-  // authored brighter than its neighbours to land at the same apparent tone.
-  const WOOD = 0xb59a78;
-  const BRASS = 0xd9c187;
+  const TABLE_X = -0.6;
+  const TABLE_Z = -0.1;
+  put(moved([...draftingTable(), ...lamp()], TABLE_X, 0, TABLE_Z));
+  put(moved(stool(), TABLE_X + 0.3, 0, TABLE_Z + 0.95, 0.5));
+  put(moved(plansBin(), TABLE_X - 1.12, 0, TABLE_Z + 0.15));
+  put(globeStand());
 
-  // ---------------- the canopy: four posts and a roof, so the model reads
-  // as something worth sheltering.
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const post = new CylinderGeometry(0.05, 0.06, 2.3, 10);
-      post.translate(sx * 1.1, 1.15, sz * 1.1);
-      object.addGeometry(world.shared, post, { color: 0x9a8a72, ambient: 0.5 });
-    }
-  }
-  const roof = new RoundedBoxGeometry(2.7, 0.08, 2.7, 2, 0.03);
-  roof.translate(0, 2.36, 0);
-  object.addGeometry(world.shared, roof, { color: 0xd8d2c4, ambient: 0.6 });
-  const trim = new RoundedBoxGeometry(2.5, 0.06, 2.5, 2, 0.02);
-  trim.translate(0, 2.3, 0);
-  object.addGeometry(world.shared, trim, { color: 0xb5a98f, ambient: 0.55 });
-
-  // ---------------- the table: turned pedestal, round top.
-  const table = new LatheGeometry(
-    [
-      [0.001, 0], [0.3, 0], [0.3, 0.025], [0.24, 0.05], [0.09, 0.09],
-      [0.07, 0.42], [0.09, 0.58], [0.24, 0.64], [0.62, 0.68], [0.64, 0.73], [0.001, 0.73],
-    ].map(([x, y]) => new Vector2(x, y)),
-    22,
-  );
-  object.addGeometry(world.shared, table, { color: WOOD, ambient: 0.62 });
-
-  // ---------------- the globe assembly: a leaning brass CRADLE holding a map
-  // sphere that turns inside it. Splitting the two is what a real desk globe
-  // does, and it lets the map be aimed at the visitor without tipping the
-  // furniture over with it.
-  const centre = new Vector3(0, 0.73 + 0.06 + GLOBE_R, 0);
+  const plan = new PlaneGeometry(SHEET_SIZE[0] - 0.004, SHEET_SIZE[1] - 0.004, 8, 6);
+  plan.translate(SHEET_AT[0], SHEET_AT[1], BOARD_T / 2 + 0.007);
+  onBoard(plan).translate(TABLE_X, 0, TABLE_Z);
+  object.addGeometry(world.shared, plan, {
+    map: localizedCanvasTexture(PLAN_W, PLAN_H, (ctx) => paintPlan(ctx, HM.unitScale)),
+    color: 0xffffff,
+    ambient: 0.9,
+    castShadow: false,
+    receiveShadow: false,
+  });
 
   const cradleNode = new Group();
-  cradleNode.position.copy(centre);
+  cradleNode.position.copy(GLOBE_AT);
   cradleNode.rotation.z = CRADLE_TILT;
   object.add(cradleNode);
 
-  // Brass meridian ring and pole caps.
-  const ring = new TorusGeometry(GLOBE_R + 0.028, 0.014, 8, 48);
-  object.addGeometry(world.shared, ring, { color: BRASS, ambient: 0.6 }, cradleNode);
+  const cradle: Part[] = [[new TorusGeometry(GLOBE_R + 0.03, 0.013, 8, 56), BRASS]];
   for (const s of [-1, 1]) {
-    const cap = new CylinderGeometry(0.02, 0.02, 0.05, 10);
-    cap.translate(0, s * (GLOBE_R + 0.028), 0);
-    object.addGeometry(world.shared, cap, { color: BRASS, ambient: 0.6 }, cradleNode);
+    cradle.push([pos(new CylinderGeometry(0.018, 0.018, 0.06, 10), 0, s * (GLOBE_R + 0.03), 0), BRASS]);
   }
+  cradle.push([
+    pos(lathe([[0.001, 0], [0.055, 0], [0.058, 0.006], [0.02, 0.012], [0.001, 0.012]], 16), 0, GLOBE_R + 0.004, 0),
+    BRASS,
+  ]);
+  put(cradle, cradleNode);
 
-  // The stand: down from the ring's south cap to the table.
-  const stem = new CylinderGeometry(0.035, 0.05, 0.1, 10);
-  stem.translate(0, -(GLOBE_R + 0.055), 0);
-  object.addGeometry(world.shared, stem, { color: BRASS, ambient: 0.55 }, cradleNode);
-
-  // The map sphere, aimed independently of the cradle. The pin hangs off this
-  // node, so it reads clean map coordinates and inherits the aim for free.
+  // The pin hangs off this node: it reads map coordinates and inherits the aim.
   const mapNode = new Group();
-  mapNode.position.copy(centre);
+  mapNode.position.copy(GLOBE_AT);
   mapNode.rotation.set(MAP_ROTATION.x, MAP_ROTATION.y, MAP_ROTATION.z);
   object.add(mapNode);
 
-  const globe = new SphereGeometry(GLOBE_R, 40, 28);
   object.addGeometry(
     world.shared,
-    globe,
+    new SphereGeometry(GLOBE_R, 40, 28),
     {
       map: worldMapTexture(HM.unitScale),
       color: 0xffffff,
-      ambient: 0.72,
+      ambient: 0.78,
       receiveShadow: false,
     },
     mapNode,
   );
 
-  // ---------------- the pin: YOU ARE HERE, updated every frame.
   const pinNode = new Group();
   mapNode.add(pinNode);
-
-  const needle = new ConeGeometry(0.02, 0.06, 10);
-  needle.rotateX(Math.PI); // tip down, into the map
-  needle.translate(0, 0.04, 0);
-  object.addGeometry(world.shared, needle, { color: 0xe0714f, ambient: 0.68 }, pinNode);
-  const head = new SphereGeometry(0.019, 10, 8);
-  head.translate(0, 0.082, 0);
-  object.addGeometry(world.shared, head, { color: 0xef8262, ambient: 0.72 }, pinNode);
+  put(
+    [
+      [new ConeGeometry(0.02, 0.06, 10).rotateX(Math.PI).translate(0, 0.04, 0), { color: 0xff8a6c, ambient: 0.72, gloss: 0.5 }],
+      [new SphereGeometry(0.019, 10, 8).translate(0, 0.082, 0), { color: 0xff8a6c, ambient: 0.72, gloss: 0.7 }],
+    ],
+    pinNode,
+  );
 
   const up = new Vector3(0, 1, 0);
   const viewer = new Vector3();
@@ -532,7 +1054,6 @@ export function buildWorldModel(
     pinNode.quaternion.setFromUnitVectors(up, g);
   };
 
-  // Place the pin before the first frame renders.
   tick(new GyroVector(), 0);
 
   world.add(object);

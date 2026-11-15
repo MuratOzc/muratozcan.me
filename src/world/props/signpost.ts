@@ -17,7 +17,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { L, type Localized } from '../../content/i18n';
-import { RoundedBoxGeometry, grained, lathe, smooth } from '../geometry';
+import { RoundedBoxGeometry, grained, lathe, smooth, trace, type Point } from '../geometry';
 import { makeLocalizedTextTexture } from '../text';
 
 const PLATES: Localized[] = [
@@ -52,7 +52,6 @@ const PAPER: HyperMaterialOptions = { color: 0xf3ecd9, ambient: 0.7, gloss: 0.1 
 const RED = 0xff7c6c;
 const WHITE = 0xffffff;
 
-type Point = [number, number];
 
 function seeded(seed: number): () => number {
   let s = seed >>> 0;
@@ -76,12 +75,6 @@ function inset(outline: Point[], d: number): Point[] {
     const k = d / (1 + a[0] * b[0] + a[1] * b[1]);
     return [p[0] + (a[0] + b[0]) * k, p[1] + (a[1] + b[1]) * k];
   });
-}
-
-function trace<T extends Path>(path: T, points: Point[]): T {
-  points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
-  path.closePath();
-  return path;
 }
 
 function fingerGeometry(): { board: BufferGeometry; rim: BufferGeometry } {

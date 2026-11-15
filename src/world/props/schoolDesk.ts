@@ -13,7 +13,19 @@ import {
   Vector3,
   type BufferGeometry,
 } from 'three';
-import { RoundedBoxGeometry, grained, lathe, merge, smooth } from '../geometry';
+import {
+  RoundedBoxGeometry,
+  across,
+  box,
+  grained,
+  lathe,
+  merge,
+  moved,
+  pos,
+  smooth,
+  type Part,
+  type Point,
+} from '../geometry';
 import {
   HyperObject,
   type GyroVector,
@@ -21,6 +33,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { localizedCanvasTexture } from '../text';
+import { pencil } from './stationery';
 
 interface Chalk {
   text: string;
@@ -152,8 +165,6 @@ function screenTexture() {
   });
 }
 
-type Point = [number, number];
-type Part = [BufferGeometry, HyperMaterialOptions];
 
 const BEECH: HyperMaterialOptions = { color: 0xe8c592, ambient: 0.55, gloss: 0.38, grain: 0.22 };
 const WALNUT: HyperMaterialOptions = { color: 0xb08258, ambient: 0.52, gloss: 0.16, grain: 0.26 };
@@ -168,12 +179,6 @@ const LEATHER: HyperMaterialOptions = { color: 0xcf9258, ambient: 0.55, gloss: 0
 const STRAP: HyperMaterialOptions = { color: 0x94633a, ambient: 0.55, gloss: 0.3 };
 const BEADS = [0xea6452, 0xf3cb52, 0x74c279, 0x62a1dc, 0xf19f50];
 
-function trace<T extends Path>(path: T, points: Point[]): T {
-  points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
-  path.closePath();
-  return path;
-}
-
 function roundedRect<T extends Path>(path: T, w: number, h: number, r: number): T {
   const x = w / 2;
   const y = h / 2;
@@ -187,34 +192,6 @@ function roundedRect<T extends Path>(path: T, w: number, h: number, r: number): 
   path.lineTo(-x, -y + r);
   path.absarc(-x + r, -y + r, r, Math.PI, Math.PI * 1.5, false);
   return path;
-}
-
-function box(w: number, h: number, d: number, r = 0.006): BufferGeometry {
-  return new RoundedBoxGeometry(w, h, d, 2, r);
-}
-
-function pos(g: BufferGeometry, x: number, y: number, z: number): BufferGeometry {
-  return g.translate(x, y, z);
-}
-
-function across(profile: Point[], width: number, bevel: number): BufferGeometry {
-  const g = new ExtrudeGeometry(trace(new Shape(), profile), {
-    depth: width - 2 * bevel,
-    bevelEnabled: true,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelSegments: 2,
-  });
-  g.translate(0, 0, -width / 2 + bevel);
-  return g.rotateY(-Math.PI / 2);
-}
-
-function moved(parts: Part[], x: number, y: number, z: number, turn = 0): Part[] {
-  for (const [g] of parts) {
-    if (turn) g.rotateY(turn);
-    g.translate(x, y, z);
-  }
-  return parts;
 }
 
 const BENCH_W = 1.2;
@@ -466,19 +443,6 @@ function abacus(): Part[] {
     parts.push([merge(beads), { color: BEADS[c], ambient: 0.58, gloss: 0.55 }]);
   });
   return parts;
-}
-
-function pencil(colour: number): Part[] {
-  const L = 0.15;
-  const R = 0.0038;
-  const lie = (g: BufferGeometry, x: number): BufferGeometry => pos(g.rotateZ(-Math.PI / 2), x, R, 0);
-  return [
-    [lie(new CylinderGeometry(R, R, L, 6), 0), { color: colour, ambient: 0.58, gloss: 0.5 }],
-    [lie(new CylinderGeometry(0.0012, R, 0.014, 6), L / 2 + 0.007), { color: 0xf0d2a4, ambient: 0.58, gloss: 0.1 }],
-    [lie(new CylinderGeometry(0.0002, 0.0012, 0.005, 6), L / 2 + 0.0165), DARK],
-    [lie(new CylinderGeometry(R + 0.0003, R + 0.0003, 0.011, 8), -L / 2 - 0.0055), STEEL],
-    [lie(new CylinderGeometry(R, R, 0.009, 8), -L / 2 - 0.0155), { color: 0xf2a39b, ambient: 0.6, gloss: 0.1 }],
-  ];
 }
 
 function notebook(): Part[] {

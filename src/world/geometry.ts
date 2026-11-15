@@ -1,6 +1,21 @@
-import { BufferAttribute, LatheGeometry, Vector2, type BufferGeometry } from 'three';
+import {
+  BufferAttribute,
+  CylinderGeometry,
+  ExtrudeGeometry,
+  LatheGeometry,
+  Quaternion,
+  Shape,
+  Vector2,
+  Vector3,
+  type BufferGeometry,
+  type Path,
+} from 'three';
 import { RoundedBoxGeometry as ThreeRoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { HyperMaterialOptions } from '../engine';
+
+export type Point = [number, number];
+export type Part = [BufferGeometry, HyperMaterialOptions];
 
 /**
  * Merge authored parts into one buffer.
@@ -52,8 +67,12 @@ export function grained(
   return geometry;
 }
 
-export function lathe(profile: Array<[number, number]>, segments: number): BufferGeometry {
-  return new LatheGeometry(profile.map(([x, y]) => new Vector2(x, y)), segments);
+export function lathe(
+  profile: Array<[number, number]>,
+  segments: number,
+  arc = Math.PI * 2,
+): BufferGeometry {
+  return new LatheGeometry(profile.map(([x, y]) => new Vector2(x, y)), segments, 0, arc);
 }
 
 export function smooth(geometry: BufferGeometry): BufferGeometry {
@@ -62,4 +81,51 @@ export function smooth(geometry: BufferGeometry): BufferGeometry {
   const welded = mergeVertices(geometry, 1e-6);
   welded.computeVertexNormals();
   return welded;
+}
+
+export function trace<T extends Path>(path: T, points: Point[]): T {
+  points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+  path.closePath();
+  return path;
+}
+
+export function box(w: number, h: number, d: number, r = 0.006): BufferGeometry {
+  return new RoundedBoxGeometry(w, h, d, 2, r);
+}
+
+export function pos(g: BufferGeometry, x: number, y: number, z: number): BufferGeometry {
+  return g.translate(x, y, z);
+}
+
+export function across(profile: Point[], width: number, bevel: number): BufferGeometry {
+  const g = new ExtrudeGeometry(trace(new Shape(), profile), {
+    depth: width - 2 * bevel,
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: bevel,
+    bevelSegments: 2,
+  });
+  g.translate(0, 0, -width / 2 + bevel);
+  return g.rotateY(-Math.PI / 2);
+}
+
+export function moved(parts: Part[], x: number, y: number, z: number, turn = 0): Part[] {
+  for (const [g] of parts) {
+    if (turn) g.rotateY(turn);
+    g.translate(x, y, z);
+  }
+  return parts;
+}
+
+const UP = new Vector3(0, 1, 0);
+
+export function aimed(g: BufferGeometry, from: Vector3, to: Vector3): BufferGeometry {
+  const along = new Vector3().subVectors(to, from).normalize();
+  g.applyQuaternion(new Quaternion().setFromUnitVectors(UP, along));
+  return g.translate(from.x, from.y, from.z);
+}
+
+export function rod(from: Vector3, to: Vector3, r: number, rEnd = r, segments = 8): BufferGeometry {
+  const length = from.distanceTo(to);
+  return aimed(new CylinderGeometry(rEnd, r, length, segments).translate(0, length / 2, 0), from, to);
 }
