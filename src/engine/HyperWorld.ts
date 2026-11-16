@@ -21,7 +21,7 @@ import {
 } from 'three';
 import { HM, setGeometry, type Curvature } from './math/curvature';
 import { GyroVector } from './math/gyrovector';
-import { HyperObject, SHADOW_LAYER } from './HyperObject';
+import { HyperObject, SHADOW_LAYER, type ViewBall } from './HyperObject';
 import { createSharedUniforms, type SharedUniforms } from './HyperMaterial';
 
 export interface HyperWorldOptions {
@@ -137,6 +137,7 @@ export class HyperWorld {
   quality: RenderQuality = DEFAULT_QUALITY;
 
   private objects: HyperObject[] = [];
+  private uncompiled: HyperObject[] = [];
   private shadowTarget: WebGLRenderTarget | null = null;
   private lightCamera: OrthographicCamera | null = null;
   private shadowStrength = 0.9;
@@ -190,6 +191,7 @@ export class HyperWorld {
     });
     this.renderer.setClearColor(opts.background ?? 0xb8c6d4, 1);
     this.renderer.info.autoReset = false;
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
 
     // Near plane must be tiny: the viewer sits at the Poincare origin, so
     // nearby geometry is genuinely a few thousandths of a unit away.
@@ -248,6 +250,7 @@ export class HyperWorld {
 
   add(obj: HyperObject): HyperObject {
     this.objects.push(obj);
+    this.uncompiled.push(obj);
     this.scene.add(obj);
     return obj;
   }
@@ -375,15 +378,18 @@ export class HyperWorld {
     scratchQuat.copy(camera.quaternion).invert();
 
     for (const obj of this.objects) {
-      const inFrustum =
-        obj.viewSine > 1 || this.inside(scratchDir.copy(obj.viewDir)) > -(obj.viewSine + 0.02);
+      const inFrustum = this.sees(obj);
       if (main) obj.inView = inFrustum;
       // Casters are culled against this camera only: a renderView camera
       // wider than the main one can show things beside the screen unshadowed.
       const casts =
         this.shadowsActive && this.castsIntoMap(obj) && (inFrustum || this.shadowInView(obj));
-      obj.show(inFrustum, casts);
+      obj.show(inFrustum, casts, this);
     }
+  }
+
+  sees(ball: ViewBall): boolean {
+    return ball.viewSine > 1 || this.inside(scratchDir.copy(ball.viewDir)) > -(ball.viewSine + 0.02);
   }
 
   /** How far inside the frustum a chart direction is, as a sine. Overwrites `dir`. */
@@ -411,7 +417,7 @@ export class HyperWorld {
     return false;
   }
 
-  private castsIntoMap(obj: HyperObject): boolean {
+  castsIntoMap(obj: ViewBall): boolean {
     const R = this.quality.shadowExtent;
     const inner = Math.tan(Math.max(0, obj.viewNear) / 2);
     // uShadowMaxWDot: the depth pass keeps nothing further out than this.
@@ -443,6 +449,20 @@ export class HyperWorld {
     this.renderer.setRenderTarget(target);
     this.renderer.render(this.scene, camera);
     this.renderer.setRenderTarget(null);
+  }
+
+  /** Start compiling the shaders of objects added since the last call. Call it only between whole objects. */
+  compile(): void {
+    const r = this.renderer;
+    // The program a material gets depends on the kind of render target bound when it is compiled.
+    r.setRenderTarget(this.viewTarget);
+    for (const obj of this.uncompiled) {
+      obj.flush();
+      if (obj.parent === this.scene) r.compile(obj, this.camera, this.scene);
+    }
+    this.uncompiled = [];
+    r.setRenderTarget(null);
+    r.getContext().flush();
   }
 
   warmUp(): void {

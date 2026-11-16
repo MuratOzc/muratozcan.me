@@ -33,7 +33,7 @@ import {
   type HyperMaterialOptions,
   type HyperWorld,
 } from '../../engine';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 import { pencil } from './stationery';
 
 interface Chalk {
@@ -88,12 +88,10 @@ function fitText(
   startPx: number,
   family: string,
 ): void {
-  let size = startPx;
-  do {
+  shrinkToFit(startPx, 12, maxWidth, (size) => {
     ctx.font = `400 ${size}px ${family}`;
-    if (ctx.measureText(text).width <= maxWidth) break;
-    size -= 3;
-  } while (size > 12);
+    return ctx.measureText(text).width;
+  });
 }
 
 function chalkboardTexture() {

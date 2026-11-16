@@ -133,13 +133,34 @@ const HYPER_LIFT = /* glsl */ `
   p /= sqrt(uK * (uK + dot(p, p))) + 1.0;
 `;
 
-export const HYPER_VERTEX = HYPER_WARP + /* glsl */ `
+// Both stages sample it, so both declare it the same way.
+const NOISE = /* glsl */ `
+#ifdef USE_NOISE
+uniform lowp sampler3D uNoise;
+
+// The +0.5 puts lattice points on the texel centres of noise.ts's texture.
+float vnoise(vec3 x) {
+  vec3 i = floor(x);
+  vec3 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise, (i + f + 0.5) * NOISE_TEXEL).r;
+}
+
+float fbm(vec3 p) {
+  return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.17) + 0.2 * vnoise(p * 4.61);
+}
+#endif
+`;
+
+export const HYPER_VERTEX = HYPER_WARP + NOISE + /* glsl */ `
 in vec4 aTint;
 
 #ifdef USE_MOTTLE
 uniform vec3 uStaticPos;
 uniform mat3 uStaticRot;
+uniform float uMottleScale;
 out vec4 vSphere;
+out float vCoarse;
 #endif
 
 #ifdef USE_SHADOWMAP
@@ -202,6 +223,7 @@ void main() {
   vec3 ps = uStaticRot * mobius_add_point(p, uStaticPos);
   float rs = dot(ps, ps);
   vSphere = vec4(2.0 * ps, 1.0 - rs) / (1.0 + rs);
+  vCoarse = fbm(vSphere.xzw * (uMottleScale * 0.17));
   #endif
 
   // Place into curved space: object transform composed with the camera
@@ -293,7 +315,7 @@ void main() {
 }
 `;
 
-export const HYPER_FRAGMENT = /* glsl */ `
+export const HYPER_FRAGMENT = NOISE + /* glsl */ `
 uniform vec3 uColor;
 uniform float uAmbient;
 
@@ -309,6 +331,7 @@ uniform float uMottleScale;
 uniform float uMottleAmount;
 uniform float uMottleHue;
 in vec4 vSphere;
+in float vCoarse;
 #endif
 
 #ifdef USE_SURFACE
@@ -316,9 +339,6 @@ in vec3 vSurface;
 in vec3 vGrain;
 #endif
 
-#ifdef USE_NOISE
-uniform lowp sampler3D uNoise;
-#endif
 
 #ifdef USE_MAP
 uniform sampler2D uMap;
@@ -350,19 +370,6 @@ float grain(vec2 p) {
   return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
-#ifdef USE_NOISE
-// The +0.5 puts lattice points on the texel centres of noise.ts's texture.
-float vnoise(vec3 x) {
-  vec3 i = floor(x);
-  vec3 f = fract(x);
-  f = f * f * (3.0 - 2.0 * f);
-  return texture(uNoise, (i + f + 0.5) * NOISE_TEXEL).r;
-}
-
-float fbm(vec3 p) {
-  return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.17) + 0.2 * vnoise(p * 4.61);
-}
-#endif
 
 #ifdef USE_SHADOWMAP
 // 1 = fully lit, 0 = fully occluded. ndl is dot(n, uLightDir), used to scale
@@ -525,8 +532,12 @@ void main() {
   #ifdef USE_MOTTLE
     vec3 sp = vec3(vSphere.x, vSphere.z, vSphere.w);
     float m = fbm(sp * uMottleScale);
-    float coarse = fbm(sp * (uMottleScale * 0.17));
-    float fine = vnoise(sp * (uMottleScale * 11.3));
+    float coarse = vCoarse;
+    #ifdef TOP_HEMISPHERE
+      float fine = 0.5;
+    #else
+      float fine = vnoise(sp * (uMottleScale * 11.3));
+    #endif
     col *= 1.0 + uMottleAmount * (0.55 * (m - 0.5) + 0.7 * (coarse - 0.5) + 0.6 * (fine - 0.5));
     vec3 drift = mix(vec3(0.88, 1.0, 1.1), vec3(1.16, 1.04, 0.8), smoothstep(0.32, 0.68, coarse));
     col *= mix(vec3(1.0), drift, uMottleHue);

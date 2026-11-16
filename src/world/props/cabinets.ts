@@ -8,7 +8,7 @@ import {
 } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
 import { merge } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 import {
   DRAWERS,
   LABELLED,
@@ -66,12 +66,10 @@ function paintCards(ctx: CanvasRenderingContext2D, labels: Localized[]): void {
     ctx.fillRect(x, y, 26, CARD_H);
     ctx.fillStyle = INK;
     const text = t(label);
-    let size = 50;
-    do {
+    shrinkToFit(50, 12, CARD_W - 26 - 28, (size) => {
       ctx.font = `600 ${size}px ${MONO}`;
-      if (ctx.measureText(text).width <= CARD_W - 26 - 28) break;
-      size -= 2;
-    } while (size > 12);
+      return ctx.measureText(text).width;
+    });
     ctx.fillText(text, x + 26 + (CARD_W - 26) / 2, y + CARD_H / 2 + 2);
   });
 }

@@ -34,7 +34,7 @@ import { L, onLangChange, t, upper } from '../../content/i18n';
 import { isTouch } from '../../device';
 import { across, box, grained, lathe, merge, pos, roundedRect, trace, type Part, type Point } from '../geometry';
 import { units } from '../placement';
-import { localizedCanvasTexture } from '../text';
+import { largestFitting, localizedCanvasTexture, shrinkToFit } from '../text';
 
 const BLUE: HyperMaterialOptions = { color: 0x9cc4ea, ambient: 0.66, gloss: 0.38 };
 const BLUE_DARK: HyperMaterialOptions = { color: 0x6f7f96, ambient: 0.6, gloss: 0.25 };
@@ -221,12 +221,10 @@ function decal(w: number, h: number, region: Region): BufferGeometry {
 const SANS = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 function fitLine(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, startPx: number, weight = 700): void {
-  let size = startPx;
-  do {
+  shrinkToFit(startPx, 8, maxWidth, (size) => {
     ctx.font = `${weight} ${size}px ${SANS}`;
-    if (ctx.measureText(text).width <= maxWidth) break;
-    size -= 2;
-  } while (size > 8);
+    return ctx.measureText(text).width;
+  });
 }
 
 function fitBlock(
@@ -237,7 +235,7 @@ function fitBlock(
   startPx: number,
 ): { lines: string[]; size: number } {
   const words = text.split(/\s+/).filter(Boolean);
-  for (let size = startPx; ; size -= 2) {
+  const layout = (size: number): { lines: string[]; size: number; fits: boolean } => {
     ctx.font = `800 ${size}px ${SANS}`;
     const lines: string[] = [];
     let line = '';
@@ -252,8 +250,10 @@ function fitBlock(
     }
     lines.push(line);
     const fits = lines.every((l) => ctx.measureText(l).width <= maxWidth) && lines.length * size * 1.12 <= maxHeight;
-    if (fits || size <= 10) return { lines, size };
-  }
+    return { lines, size, fits };
+  };
+  const { lines, size } = layout(largestFitting(10, startPx, (size) => layout(size).fits));
+  return { lines, size };
 }
 
 function seeded(seed: number): () => number {

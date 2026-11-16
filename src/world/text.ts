@@ -152,8 +152,38 @@ interface FittedText {
 }
 
 /**
+ * Largest size from `max` down to `min` at which `widthAt` comes within
+ * `room`. `widthAt` sets the font for a size and measures; its last call is
+ * for the size returned, so the font is left set to it.
+ */
+export function shrinkToFit(
+  max: number,
+  min: number,
+  room: number,
+  widthAt: (size: number) => number,
+): number {
+  const width = widthAt(max);
+  if (width <= room) return max;
+  let size = Math.max(min, Math.floor((max * room) / width));
+  while (widthAt(size) > room && size > min) size--;
+  return size;
+}
+
+/** Largest whole size in [min, max] that `fits`, or `min`. `fits` must hold for every size below one it holds for. */
+export function largestFitting(min: number, max: number, fits: (size: number) => boolean): number {
+  let lo = min;
+  let hi = max;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
  * Largest font size at which `text` wraps into a box, and the wrap that goes
- * with it. Steps down until it fits and stops at `min` — so the box is the
+ * with it. Shrinks until it fits and stops at `min` — so the box is the
  * constraint and the type gives way, never the other way round.
  */
 function fitToBox(
@@ -165,19 +195,16 @@ function fitToBox(
   min: number,
   lineRatio: number,
 ): FittedText {
-  let fitted: FittedText | null = null;
-  for (let size = max; size >= min; size -= 2) {
+  const wrap = (size: number): FittedText => {
     ctx.font = font.replace('SIZE', String(size));
-    const lines = wrapToWidth(ctx, text, box.width);
-    const lineHeight = size * lineRatio;
-    fitted = { lines, size, lineHeight };
-    if (lines.length * lineHeight <= box.height) break;
-  }
+    return { lines: wrapToWidth(ctx, text, box.width), size, lineHeight: size * lineRatio };
+  };
   // At `min` the wrap is still correct horizontally; only the height can have
   // run out, and clipping a line is better than clipping a letter.
-  const f = fitted!;
-  ctx.font = font.replace('SIZE', String(f.size));
-  return f;
+  return wrap(largestFitting(min, max, (size) => {
+    const f = wrap(size);
+    return f.lines.length * f.lineHeight <= box.height;
+  }));
 }
 
 /**
@@ -276,14 +303,11 @@ export function makeLocalizedTextTexture(text: Localized, opts: TextTextureOptio
     }
 
     const line = t(text);
-    // Shrink to fit rather than clipping.
-    let size = h - padding * 2;
     const family = opts.font ?? '600 SIZEpx ui-monospace, Consolas, monospace';
-    do {
+    shrinkToFit(h - padding * 2, 8, w - padding * 2, (size) => {
       ctx.font = family.replace('SIZE', String(size));
-      if (ctx.measureText(line).width <= w - padding * 2) break;
-      size -= 4;
-    } while (size > 8);
+      return ctx.measureText(line).width;
+    });
 
     ctx.fillText(line, w / 2, h / 2);
   });
@@ -313,14 +337,11 @@ export function makeTextTexture(text: string, opts: TextTextureOptions = {}): Te
     ctx.letterSpacing = `${opts.letterSpacing}px`;
   }
 
-  // Shrink to fit rather than clipping.
-  let size = height - padding * 2;
   const family = opts.font ?? '600 SIZEpx ui-monospace, Consolas, monospace';
-  do {
+  shrinkToFit(height - padding * 2, 8, width - padding * 2, (size) => {
     ctx.font = family.replace('SIZE', String(size));
-    if (ctx.measureText(text).width <= width - padding * 2) break;
-    size -= 4;
-  } while (size > 8);
+    return ctx.measureText(text).width;
+  });
 
   ctx.fillText(text, width / 2, height / 2);
 

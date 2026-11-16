@@ -35,7 +35,7 @@ import {
   type Part,
 } from '../geometry';
 import { L, t, type Localized } from '../../content/i18n';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 
 /**
  * Station 5: frontend — a browser window standing in a field, showing this
@@ -216,12 +216,10 @@ const NOTES_H = 896;
 const NOTE_PX = 190;
 
 function fitted(ctx: CanvasRenderingContext2D, lines: string[], width: number, from: number, font: string): number {
-  let size = from;
-  for (; size > 10; size -= 2) {
+  return shrinkToFit(from, 10, width, (size) => {
     ctx.font = font.replace('SIZE', String(size));
-    if (lines.every((line) => ctx.measureText(line).width <= width)) break;
-  }
-  return size;
+    return Math.max(...lines.map((line) => ctx.measureText(line).width));
+  });
 }
 
 function notesTexture() {

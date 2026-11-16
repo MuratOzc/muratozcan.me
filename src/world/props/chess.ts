@@ -31,7 +31,7 @@ import {
   type Part,
   type Point,
 } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 
 const SQ = 0.058;
 const FIELD = 8 * SQ;
@@ -685,14 +685,11 @@ function paintScoresheet(forWhite: boolean): Paint {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
-    const fit = (text: string, font: string, size: number, room: number) => {
-      let px = size;
-      do {
+    const fit = (text: string, font: string, size: number, room: number) =>
+      shrinkToFit(size, 8, room, (px) => {
         ctx.font = font.replace('SIZE', String(px));
-        if (ctx.measureText(text).width <= room) break;
-        px -= 1;
-      } while (px > 8);
-    };
+        return ctx.measureText(text).width;
+      });
 
     ctx.fillStyle = '#8b8272';
     fit(upper(t(ROUND_L)), `400 SIZEpx ${MONO}`, 20, w - 2 * pad);
@@ -796,22 +793,18 @@ function paintCard(name: string, colour: Localized, federation: string, chip: st
     ctx.textAlign = 'center';
     ctx.fillStyle = '#20262c';
     ctx.letterSpacing = '6px';
-    let size = 112;
-    do {
+    shrinkToFit(112, 20, w - 2 * pad, (size) => {
       ctx.font = `700 ${size}px ${MONO}`;
-      if (ctx.measureText(name).width <= w - 2 * pad) break;
-      size -= 4;
-    } while (size > 20);
+      return ctx.measureText(name).width;
+    });
     ctx.fillText(name, w / 2, 100);
 
     ctx.letterSpacing = '3px';
     const line = `${upper(t(colour))} · ${federation}`;
-    size = 34;
-    do {
+    shrinkToFit(34, 12, w - 2 * pad - 70, (size) => {
       ctx.font = `500 ${size}px ${MONO}`;
-      if (ctx.measureText(line).width <= w - 2 * pad - 70) break;
-      size -= 2;
-    } while (size > 12);
+      return ctx.measureText(line).width;
+    });
     const tw = ctx.measureText(line).width;
     const y = 190;
     const left = (w - tw - 52) / 2;
@@ -1039,12 +1032,10 @@ function scoreboardTexture(): Texture {
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#4c5a4d';
-    let size = 44;
-    do {
+    shrinkToFit(44, 16, w - 2 * pad, (size) => {
       ctx.font = `500 ${size}px ${MONO}`;
-      if (ctx.measureText(t(NOTE)).width <= w - 2 * pad) break;
-      size -= 2;
-    } while (size > 16);
+      return ctx.measureText(t(NOTE)).width;
+    });
     ctx.fillText(t(NOTE), w / 2, 440);
 
     ctx.fillStyle = '#9c9484';

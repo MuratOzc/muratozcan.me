@@ -20,7 +20,7 @@ import {
 } from '../../engine';
 import { L, t, upper } from '../../content/i18n';
 import { box, grained, lathe, moved, pos, smooth, trace, type Part, type Point } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 import { ATLAS, GREEN, Lamps, decal, fillet, paver, sweep, v3, type Region } from './trolleyKit';
 import { buildServer, type Server, type ServerSpec } from './trolleyServers';
 
@@ -77,12 +77,10 @@ const TAG_MAINS: Region = [8, 440, 192, 60];
 const TAG_LAN: Region = [216, 440, 192, 60];
 
 function fitted(ctx: CanvasRenderingContext2D, text: string, font: string, max: number, width: number): void {
-  let size = max;
-  do {
+  shrinkToFit(max, 10, width, (size) => {
     ctx.font = font.replace('SIZE', String(size));
-    if (ctx.measureText(text).width <= width) break;
-    size -= 2;
-  } while (size > 10);
+    return ctx.measureText(text).width;
+  });
 }
 
 function printTexture(): Texture {

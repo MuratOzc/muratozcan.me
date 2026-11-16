@@ -9,9 +9,10 @@ import { onLangChange, t, type Localized } from '../content/i18n';
  * created from JS would first appear after the wait it exists to cover.
  *
  * The build is one long synchronous run. `stage()` is therefore a coroutine
- * boundary: it paints the new label and hands control back to the browser for
- * two frames before the caller does the next chunk of work. Without the yield
- * the bar would jump straight from 0 to 100 on the frame everything finished.
+ * boundary: it paints the new label and hands control back to the browser
+ * until that frame is painted, before the caller does the next chunk of work.
+ * Without the yield the bar would jump straight from 0 to 100 on the frame
+ * everything finished.
  */
 
 const el = document.getElementById('loading') as HTMLDivElement;
@@ -27,9 +28,8 @@ onLangChange(() => {
 });
 
 function nextFrame(): Promise<void> {
-  return new Promise((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  );
+  // A task queued from a frame callback runs after that frame is painted.
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
 
 export function setHint(text: Localized): void {

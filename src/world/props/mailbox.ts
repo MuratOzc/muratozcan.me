@@ -15,7 +15,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { across, aimed, box, grained, lathe, merge, moved, pos, type Part, type Point } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 
 const EMAIL = 'mr.muratozcan@gmail.com';
 const HOUSE_NUMBER = '10';
@@ -254,12 +254,10 @@ function lettering() {
     ctx.textBaseline = 'middle';
 
     const [ex, ey, ew, eh] = EMAIL_AT;
-    let size = 96;
-    do {
+    shrinkToFit(96, 12, ew - 40, (size) => {
       ctx.font = `700 ${size}px ui-monospace, Consolas, monospace`;
-      if (ctx.measureText(EMAIL).width <= ew - 40) break;
-      size -= 2;
-    } while (size > 12);
+      return ctx.measureText(EMAIL).width;
+    });
     ctx.fillStyle = '#33302a';
     ctx.fillText(EMAIL, ex + ew / 2, ey + eh / 2 + 2);
 

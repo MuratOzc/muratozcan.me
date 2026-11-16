@@ -26,7 +26,7 @@ import {
 } from '../../engine';
 import { L, t, upper } from '../../content/i18n';
 import { RoundedBoxGeometry, grained, lathe, merge, moved, roundedRect, trace, type Part, type Point } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 
 /**
  * Security cameras that watch you.
@@ -623,11 +623,10 @@ function paintNotice(ctx: CanvasRenderingContext2D, text: string, cx: number, to
   for (let i = 1; i < words.length; i++) layouts.push([words.slice(0, i).join(' '), words.slice(i).join(' ')]);
   let best = { size: 0, lines: layouts[0] };
   for (const lines of layouts) {
-    let size = Math.floor(h / (lines.length * 1.14));
-    for (; size > 10; size -= 2) {
-      ctx.font = `800 ${size}px "Segoe UI", Arial, sans-serif`;
-      if (lines.every((l) => ctx.measureText(l).width <= w)) break;
-    }
+    const size = shrinkToFit(Math.floor(h / (lines.length * 1.14)), 10, w, (px) => {
+      ctx.font = `800 ${px}px "Segoe UI", Arial, sans-serif`;
+      return Math.max(...lines.map((l) => ctx.measureText(l).width));
+    });
     if (size > best.size * (lines.length > best.lines.length ? 1.25 : 1)) best = { size, lines };
   }
   ctx.font = `800 ${best.size}px "Segoe UI", Arial, sans-serif`;

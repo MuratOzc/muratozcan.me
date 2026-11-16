@@ -8,11 +8,11 @@ import {
   Vector3,
   type Object3D,
 } from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { HM } from './math/curvature';
 import { unitToPoincare } from './math/coords';
 import { GyroVector } from './math/gyrovector';
 import { mobiusAdd } from './math/mobius';
+import { crevices } from './crevices';
 import {
   createHyperMaterials,
   createObjectUniforms,
@@ -43,118 +43,135 @@ const prepared = new WeakMap<BufferGeometry, BufferGeometry>();
  */
 const MAX_EDGE = 0.3;
 
-/**
- * Split every edge longer than MAX_EDGE at its midpoint, repeatedly. Null if
- * nothing needed splitting.
- *
- * Bisecting whole edges is what keeps neighbours agreeing: an edge shared by
- * two triangles is cut at the same point from both sides, so no crack opens.
- */
-function subdivide(geometry: BufferGeometry): BufferGeometry | null {
-  const position = geometry.attributes.position;
-  const index = geometry.index;
-  const corners = index ? index.count : position.count;
-  const at = (i: number) => (index ? index.getX(i) : i);
-  const limit = MAX_EDGE * MAX_EDGE;
-
-  const d2 = (a: number, b: number) =>
-    (position.getX(a) - position.getX(b)) ** 2 +
-    (position.getY(a) - position.getY(b)) ** 2 +
-    (position.getZ(a) - position.getZ(b)) ** 2;
-  let needed = false;
-  for (let i = 0; i < corners && !needed; i += 3) {
-    const a = at(i);
-    const b = at(i + 1);
-    const c = at(i + 2);
-    needed = d2(a, b) > limit || d2(b, c) > limit || d2(c, a) > limit;
-  }
-  if (!needed) return null;
-
-  // A vertex is its attributes laid end to end: position, then whichever of
-  // normal, uv and colour the geometry has.
-  const layout = (['position', 'normal', 'uv', 'color', 'grain'] as const)
-    .filter((name) => geometry.attributes[name])
-    .map((name) => ({ name, attribute: geometry.attributes[name], size: geometry.attributes[name].itemSize }));
-  const stride = layout.reduce((n, l) => n + l.size, 0);
-  const normalAt = layout.some((l) => l.name === 'normal') ? 3 : -1;
-
-  const read = (i: number): number[] => {
-    const v: number[] = [];
-    for (const l of layout) for (let c = 0; c < l.size; c++) v.push(l.attribute.getComponent(i, c));
-    return v;
-  };
-  const mid = (a: number[], b: number[]): number[] => {
-    const m = new Array<number>(stride);
-    for (let k = 0; k < stride; k++) m[k] = (a[k] + b[k]) / 2;
-    if (normalAt >= 0) {
-      const length = Math.hypot(m[normalAt], m[normalAt + 1], m[normalAt + 2]) || 1;
-      for (let k = 0; k < 3; k++) m[normalAt + k] /= length;
-    }
-    return m;
-  };
-  const edge = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
-
-  const out: number[] = [];
-  const split = (a: number[], b: number[], c: number[]): void => {
-    const ab = edge(a, b);
-    const bc = edge(b, c);
-    const ca = edge(c, a);
-    const longest = Math.max(ab, bc, ca);
-    if (longest <= limit) {
-      for (const v of [a, b, c]) for (let k = 0; k < stride; k++) out.push(v[k]);
-    } else if (ab === longest) {
-      const m = mid(a, b);
-      split(a, m, c);
-      split(m, b, c);
-    } else if (bc === longest) {
-      const m = mid(b, c);
-      split(a, b, m);
-      split(a, m, c);
-    } else {
-      const m = mid(c, a);
-      split(a, b, m);
-      split(m, b, c);
-    }
-  };
-  for (let i = 0; i < corners; i += 3) split(read(at(i)), read(at(i + 1)), read(at(i + 2)));
-
-  const result = new BufferGeometry();
-  const count = out.length / stride;
-  let offset = 0;
-  for (const l of layout) {
-    const array = new Float32Array(count * l.size);
-    for (let i = 0; i < count; i++) {
-      for (let c = 0; c < l.size; c++) array[i * l.size + c] = out[i * stride + offset + c];
-    }
-    result.setAttribute(l.name, new BufferAttribute(array, l.size));
-    offset += l.size;
-  }
-  return result;
-}
+const KEPT = ['position', 'normal', 'uv', 'color', 'grain'];
 
 /**
- * Make a geometry fit to draw: no edge longer than MAX_EDGE, and indexed, so
- * shared vertices are transformed once.
+ * Make a geometry fit to draw: indexed, so shared vertices are transformed
+ * once, and no edge longer than MAX_EDGE.
  *
- * RoundedBoxGeometry and the extrusions hand back non-indexed buffers — three
- * positions per triangle, nothing reused. That is ordinarily a minor
- * waste; here the vertex shader runs two Möbius additions, a quaternion
- * transform and a tan per vertex, and runs it again for the second hemisphere
- * and again for the shadow pass. Welding is exact (positions, normals and UVs
- * must all match), so this changes nothing on screen: measured bit-identical
- * across a 1280x720 frame, at 4.07x fewer vertices.
- *
- * The tolerance is deliberately far tighter than the 1e-4 default — geometry
- * at this scale has real detail in the fourth decimal.
+ * Vertices are welded only where every attribute agrees to six decimals:
+ * geometry at this scale has real detail in the fourth. Each edge gets one
+ * midpoint, so an edge shared by two triangles is cut at the same point from
+ * both sides and no crack opens.
  */
 function prepare(geometry: BufferGeometry): BufferGeometry {
   let g = prepared.get(geometry);
   if (!g) {
-    const fine = subdivide(geometry) ?? geometry;
-    g = fine.index ? fine : mergeVertices(fine, 1e-6);
+    g = refine(geometry);
     prepared.set(geometry, g);
   }
   return g;
+}
+
+function refine(geometry: BufferGeometry): BufferGeometry {
+  const sources = KEPT.filter((name) => geometry.attributes[name]).map(
+    (name) => [name, geometry.attributes[name] as BufferAttribute] as const,
+  );
+  const stride = sources.reduce((n, [, a]) => n + a.itemSize, 0);
+  const count = geometry.attributes.position.count;
+  const values = new Float64Array(count * stride);
+  let at = 0;
+  for (const [, a] of sources) {
+    for (let i = 0; i < count; i++) {
+      for (let c = 0; c < a.itemSize; c++) values[i * stride + at + c] = a.getComponent(i, c);
+    }
+    at += a.itemSize;
+  }
+  const pool: number[] = [];
+  let index: ArrayLike<number>;
+  if (geometry.index) {
+    for (let i = 0; i < values.length; i++) pool.push(values[i]);
+    index = geometry.index.array;
+  } else {
+    const same = (v: number): boolean => {
+      for (let k = 0; k < stride; k++) if (Math.round(pool[v * stride + k] * 1e6) !== key[k]) return false;
+      return true;
+    };
+    const first = new Map<number, number>();
+    const next: number[] = [];
+    const key = new Int32Array(stride);
+    const welded: number[] = [];
+    for (let i = 0; i < count; i++) {
+      let hash = 0;
+      for (let k = 0; k < stride; k++) {
+        key[k] = Math.round(values[i * stride + k] * 1e6);
+        hash = Math.imul(hash ^ key[k], 16777619);
+      }
+      let v = first.get(hash) ?? -1;
+      while (v >= 0 && !same(v)) v = next[v];
+      if (v < 0) {
+        v = pool.length / stride;
+        next.push(first.get(hash) ?? -1);
+        first.set(hash, v);
+        for (let k = 0; k < stride; k++) pool.push(values[i * stride + k]);
+      }
+      welded.push(v);
+    }
+    index = welded;
+  }
+
+  const limit = MAX_EDGE * MAX_EDGE;
+  const normalAt = geometry.attributes.normal ? 3 : -1;
+  const midpoints = new Map<number, number>();
+  const out: number[] = [];
+  const length2 = (a: number, b: number): number => {
+    const p = a * stride;
+    const q = b * stride;
+    return (pool[p] - pool[q]) ** 2 + (pool[p + 1] - pool[q + 1]) ** 2 + (pool[p + 2] - pool[q + 2]) ** 2;
+  };
+  const midpoint = (a: number, b: number): number => {
+    const key = Math.min(a, b) * 2 ** 26 + Math.max(a, b);
+    let m = midpoints.get(key);
+    if (m === undefined) {
+      m = pool.length / stride;
+      midpoints.set(key, m);
+      for (let k = 0; k < stride; k++) pool.push((pool[a * stride + k] + pool[b * stride + k]) / 2);
+      if (normalAt >= 0) {
+        const n = m * stride + normalAt;
+        const length = Math.hypot(pool[n], pool[n + 1], pool[n + 2]) || 1;
+        for (let k = 0; k < 3; k++) pool[n + k] /= length;
+      }
+    }
+    return m;
+  };
+  const split = (a: number, b: number, c: number): void => {
+    const ab = length2(a, b);
+    const bc = length2(b, c);
+    const ca = length2(c, a);
+    const longest = Math.max(ab, bc, ca);
+    if (longest <= limit) {
+      out.push(a, b, c);
+    } else if (ab === longest) {
+      const m = midpoint(a, b);
+      split(a, m, c);
+      split(m, b, c);
+    } else if (bc === longest) {
+      const m = midpoint(b, c);
+      split(a, b, m);
+      split(a, m, c);
+    } else {
+      const m = midpoint(c, a);
+      split(a, b, m);
+      split(m, b, c);
+    }
+  };
+  for (let t = 0; t + 2 < index.length; t += 3) split(index[t], index[t + 1], index[t + 2]);
+  if (geometry.index && midpoints.size === 0) return geometry;
+
+  const vertices = pool.length / stride;
+  const result = new BufferGeometry();
+  let offset = 0;
+  for (const [name, a] of sources) {
+    const size = a.itemSize;
+    const array = new Float32Array(vertices * size);
+    for (let i = 0; i < vertices; i++) {
+      for (let c = 0; c < size; c++) array[i * size + c] = pool[i * stride + offset + c];
+    }
+    result.setAttribute(name, new BufferAttribute(array, size));
+    offset += size;
+  }
+  result.setIndex(out);
+  return result;
 }
 
 type Tint = [number, number, number, number];
@@ -205,9 +222,23 @@ interface Pending extends Part {
   key: string;
 }
 
-interface Batch {
+export interface ViewBall {
+  readonly viewDir: Vector3;
+  viewNear: number;
+  viewFar: number;
+  /** 2 when the ball surrounds the viewer and so covers every direction. */
+  viewSine: number;
+}
+
+export interface Cull {
+  sees(ball: ViewBall): boolean;
+  castsIntoMap(ball: ViewBall): boolean;
+}
+
+interface Batch extends ViewBall {
   bottom: Mesh;
   top: Mesh | null;
+  depth: Mesh | null;
   centre: Vector3;
   radius: number;
 }
@@ -249,112 +280,73 @@ function batchKey(parent: Object3D, opts: HyperMaterialOptions): string {
   ].join('|');
 }
 
-const mergedCache = new Map<string, BufferGeometry>();
+const mergedCache = new Map<string, BufferGeometry[]>();
 
-const RAYS: Array<[number, number, number]> = [];
-for (let x = -1; x <= 1; x++) {
-  for (let y = -1; y <= 1; y++) {
-    for (let z = -1; z <= 1; z++) {
-      const length = Math.hypot(x, y, z);
-      if (length > 0) RAYS.push([x / length, y / length, z / length]);
-    }
-  }
-}
-
-function* bake(geometry: BufferGeometry): Generator<void> {
+function shade(geometry: BufferGeometry, tints: BufferAttribute[]): void {
   const position = geometry.attributes.position.array as Float32Array;
   const normal = geometry.attributes.normal.array as Float32Array;
-  const index = geometry.index!.array;
-  const tint = geometry.attributes.aTint as BufferAttribute;
+  const index = geometry.index!.array as Uint16Array | Uint32Array;
   const unshaded = geometry.userData.unshaded as Uint8Array | undefined;
-  const count = position.length / 3;
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < position.length; i++) {
-    const c = i % 3;
-    if (position[i] < min[c]) min[c] = position[i];
-    if (position[i] > max[c]) max[c] = position[i];
-  }
-  const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
-  if (!(extent > 0)) return;
-
-  const cell = Math.max(extent / 110, 0.012);
-  const pad = 2;
-  const size = [0, 1, 2].map((c) => Math.ceil((max[c] - min[c]) / cell) + 2 * pad + 1);
-  const grid = new Uint8Array(size[0] * size[1] * size[2]);
-  const slot = (x: number, y: number, z: number): number => {
-    const i = Math.floor((x - min[0]) / cell) + pad;
-    const j = Math.floor((y - min[1]) / cell) + pad;
-    const k = Math.floor((z - min[2]) / cell) + pad;
-    if (i < 0 || j < 0 || k < 0 || i >= size[0] || j >= size[1] || k >= size[2]) return -1;
-    return (k * size[1] + j) * size[0] + i;
+  const apply = (open: Float32Array | null): void => {
+    if (!open) return;
+    const rgba = geometry.attributes.aTint.array as Float32Array;
+    for (let v = 0; v < open.length; v++) {
+      for (let c = 0; c < 3; c++) rgba[v * 4 + c] *= open[v];
+    }
+    for (const t of tints) t.needsUpdate = true;
   };
-  yield;
+  const job = { position, normal, index, unshaded, apply };
+  const w = baker();
+  if (w) {
+    jobs.set(++lastJob, job);
+    w.postMessage({ id: lastJob, position: position.slice(), normal: normal.slice(), index: index.slice(), unshaded });
+  } else idle(job);
+}
 
-  for (let t = 0; t < index.length; t += 3) {
-    const a = index[t] * 3;
-    const b = index[t + 1] * 3;
-    const c = index[t + 2] * 3;
-    const longest = Math.max(
-      Math.hypot(position[a] - position[b], position[a + 1] - position[b + 1], position[a + 2] - position[b + 2]),
-      Math.hypot(position[b] - position[c], position[b + 1] - position[c + 1], position[b + 2] - position[c + 2]),
-      Math.hypot(position[c] - position[a], position[c + 1] - position[a + 1], position[c + 2] - position[a + 2]),
-    );
-    const n = Math.min(48, Math.max(1, Math.ceil(longest / (cell * 0.6))));
-    for (let i = 0; i <= n; i++) {
-      for (let j = 0; j <= n - i; j++) {
-        const u = i / n;
-        const w = j / n;
-        const s = slot(
-          position[a] + (position[b] - position[a]) * u + (position[c] - position[a]) * w,
-          position[a + 1] + (position[b + 1] - position[a + 1]) * u + (position[c + 1] - position[a + 1]) * w,
-          position[a + 2] + (position[b + 2] - position[a + 2]) * u + (position[c + 2] - position[a + 2]) * w,
-        );
-        if (s >= 0) grid[s] = 1;
-      }
-    }
-    if (n > 8 || t % 96 === 0) yield;
-  }
+interface Job {
+  position: Float32Array;
+  normal: Float32Array;
+  index: Uint16Array | Uint32Array;
+  unshaded?: Uint8Array;
+  apply: (open: Float32Array | null) => void;
+}
 
-  // A cell holding a surface reaches up to √3 cells off it: rays that start nearer make the surface shade itself.
-  const LIFT = 1.75;
-  const REACH = [1.2, 2.6, 4.2, 6];
-  const WEIGHT = [1, 0.75, 0.5, 0.3];
-  const open = new Float32Array(count).fill(1);
-  for (let v = 0; v < count; v++) {
-    if (unshaded?.[v]) continue;
-    const nx = normal[v * 3];
-    const ny = normal[v * 3 + 1];
-    const nz = normal[v * 3 + 2];
-    const x = position[v * 3] + nx * cell * LIFT;
-    const y = position[v * 3 + 1] + ny * cell * LIFT;
-    const z = position[v * 3 + 2] + nz * cell * LIFT;
-    let rays = 0;
-    let blocked = 0;
-    for (const [dx, dy, dz] of RAYS) {
-      if (dx * nx + dy * ny + dz * nz < 0.25) continue;
-      rays++;
-      for (let r = 0; r < REACH.length; r++) {
-        const s = slot(x + dx * REACH[r] * cell, y + dy * REACH[r] * cell, z + dz * REACH[r] * cell);
-        if (s >= 0 && grid[s]) {
-          blocked += WEIGHT[r];
-          break;
-        }
-      }
-    }
-    if (rays > 0) open[v] = 1 - 0.55 * (blocked / rays);
-    if (v % 32 === 31) yield;
-  }
+const jobs = new Map<number, Job>();
+let lastJob = 0;
+let worker: Worker | null | undefined;
 
-  const rgba = tint.array as Float32Array;
-  for (let v = 0; v < count; v++) {
-    for (let c = 0; c < 3; c++) rgba[v * 4 + c] *= open[v];
+function baker(): Worker | null {
+  if (worker !== undefined) return worker;
+  try {
+    worker = new Worker(new URL('./creviceWorker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent) => {
+      const { id, open } = event.data;
+      jobs.get(id)?.apply(open);
+      jobs.delete(id);
+    };
+    worker.onerror = () => {
+      worker?.terminate();
+      worker = null;
+      for (const job of jobs.values()) idle(job);
+      jobs.clear();
+    };
+  } catch {
+    worker = null;
   }
-  tint.needsUpdate = true;
+  return worker;
 }
 
 const bakes: Array<Generator<void>> = [];
 let bakeQueued = false;
+
+function idle(job: Job): void {
+  bakes.push(
+    (function* () {
+      job.apply(yield* crevices(job.position, job.normal, job.index, job.unshaded));
+    })(),
+  );
+  queueBakes();
+}
 
 function runBakes(deadline?: IdleDeadline): void {
   bakeQueued = false;
@@ -396,7 +388,51 @@ function copyAttribute(
   }
 }
 
-function mergeParts(parts: Part[]): BufferGeometry {
+const PIECE_TRIANGLES = 4000;
+// Authored units.
+const PIECE_SPAN = 0.6;
+
+function triangles(parts: Part[]): number {
+  return parts.reduce((n, p) => n + p.geometry.index!.count / 3, 0);
+}
+
+function centre(part: Part): Vector3 {
+  const g = part.geometry;
+  if (!g.boundingBox) g.computeBoundingBox();
+  return g.boundingBox!.getCenter(new Vector3());
+}
+
+function group(parts: Part[]): Part[][] {
+  const total = triangles(parts);
+  if (total <= PIECE_TRIANGLES || parts.length < 2) return [parts];
+  const centres = new Map(parts.map((p) => [p, centre(p)]));
+  const min = new Vector3(Infinity, Infinity, Infinity);
+  const max = new Vector3(-Infinity, -Infinity, -Infinity);
+  for (const c of centres.values()) {
+    min.min(c);
+    max.max(c);
+  }
+  const span = max.sub(min);
+  const axis = span.x >= span.y && span.x >= span.z ? 'x' : span.y >= span.z ? 'y' : 'z';
+  if (span[axis] < PIECE_SPAN) return [parts];
+  const sorted = [...parts].sort((a, b) => centres.get(a)![axis] - centres.get(b)![axis]);
+  let half = 0;
+  for (let n = 0; half < sorted.length - 1 && n < total / 2; half++) n += triangles([sorted[half]]);
+  return [...group(sorted.slice(0, half)), ...group(sorted.slice(half))];
+}
+
+function slice(merged: BufferGeometry, firstVertex: number, endVertex: number, from: number, to: number): BufferGeometry {
+  const piece = new BufferGeometry();
+  for (const [name, a] of Object.entries(merged.attributes)) {
+    const array = (a.array as Float32Array).subarray(firstVertex * a.itemSize, endVertex * a.itemSize);
+    piece.setAttribute(name, new BufferAttribute(array, a.itemSize));
+  }
+  piece.setIndex(new BufferAttribute(merged.index!.array.slice(from, to).map((i) => i - firstVertex), 1));
+  piece.computeBoundingSphere();
+  return piece;
+}
+
+function mergeParts(parts: Part[], divisible: boolean): BufferGeometry[] {
   const signature = parts
     .map((p) => {
       const version = (p.geometry.attributes.position as BufferAttribute).version;
@@ -405,8 +441,11 @@ function mergeParts(parts: Part[]): BufferGeometry {
     .join(';');
   // A batch with moving parts is rewritten in place, so it is never shared.
   const moves = parts.some((p) => p.mover);
-  const cached = moves ? undefined : mergedCache.get(signature);
+  const cached = moves ? undefined : mergedCache.get(signature + divisible);
   if (cached) return cached;
+  // A moving part is found again by its place in the merged buffer, so its batch stays whole.
+  const groups = divisible && !moves ? group(parts) : [parts];
+  parts = groups.flat();
 
   let vertexCount = 0;
   let indexCount = 0;
@@ -467,6 +506,19 @@ function mergeParts(parts: Part[]): BufferGeometry {
   }
   merged.setIndex(new BufferAttribute(index, 1));
   merged.computeBoundingSphere();
+  let pieces = [merged];
+  if (groups.length > 1) {
+    pieces = [];
+    let vertex = 0;
+    let corner = 0;
+    for (const g of groups) {
+      const vertices = g.reduce((n, p) => n + p.geometry.attributes.position.count, 0);
+      const corners = triangles(g) * 3;
+      pieces.push(slice(merged, vertex, vertex + vertices, corner, corner + corners));
+      vertex += vertices;
+      corner += corners;
+    }
+  }
   if (moves) {
     const unshaded = new Uint8Array(vertexCount);
     for (const [mover, start, count] of ranges) {
@@ -474,10 +526,10 @@ function mergeParts(parts: Part[]): BufferGeometry {
       if (!mover.shaded) unshaded.fill(1, start, start + count);
     }
     merged.userData.unshaded = unshaded;
-  } else mergedCache.set(signature, merged);
-  bakes.push(bake(merged));
-  queueBakes();
-  return merged;
+  } else mergedCache.set(signature + divisible, pieces);
+  // Shades the whole batch, so what shades a vertex need not be in its piece; pieces share its buffers.
+  shade(merged, pieces.map((p) => p.attributes.aTint as BufferAttribute));
+  return pieces;
 }
 
 const MOVING_PARTS_PAD = 1.25;
@@ -541,7 +593,7 @@ function sorted(mesh: Mesh, order: number): number {
  * HyperObject. Keep them small: a point far from the root in Unit coordinates
  * gets mapped toward infinity very quickly.
  */
-export class HyperObject extends Group {
+export class HyperObject extends Group implements ViewBall {
   localGV: GyroVector;
   useTanKHeight: boolean;
   backdrop = false;
@@ -579,7 +631,7 @@ export class HyperObject extends Group {
   /** null when the meshes of that pass are not all set the same way. */
   private showBottom: boolean | null = true;
   private showTop: boolean | null = true;
-  private showDepth = true;
+  private showDepth: boolean | null = true;
 
   constructor(localGV = new GyroVector(), useTanKHeight = true) {
     super();
@@ -648,54 +700,66 @@ export class HyperObject extends Group {
     const full = { tanKHeight: this.useTanKHeight, ...opts };
     this.boundsStale = true;
     const part = { geometry: prepare(geometry), tint: WHITE, surface: surfaceOf(full) };
-    return this.build([part], full, parent ?? this);
+    // Callers rewrite a live geometry's buffers through its mesh, so it has to stay one mesh.
+    return this.build([part], full, parent ?? this, false);
   }
 
-  private build(parts: Part[], opts: HyperMaterialOptions, parent: Object3D): HyperMaterial[] {
+  private build(parts: Part[], opts: HyperMaterialOptions, parent: Object3D, divisible = true): HyperMaterial[] {
     const shared = this.shared!;
-    const geometry = mergeParts(parts);
+    // Blended paint draws in the order it was added, which pieces drawn apart would not keep.
+    const pieces = mergeParts(parts, divisible && !(opts.map && opts.alphaBlend));
     if (parent !== this) this.hasMovingParts = true;
     this.sway = Math.max(this.sway, opts.sway ?? 0);
 
     const mats = createHyperMaterials(shared, this.placement, opts);
-    const meshes = mats.map((mat) => {
-      const mesh = new Mesh(geometry, mat);
-      // Three's frustum culling is Euclidean and will cull geometry that is
-      // plainly visible. HyperEngine disables culling outright in spherical
-      // space for the same reason.
-      mesh.frustumCulled = false;
-      mesh.matrixAutoUpdate = false;
-      parent.add(mesh);
-      (mat.hemisphere === 'top' ? this.top : this.bottom).push(mesh);
-      return mesh;
-    });
     this.materials.push(...mats);
-    this.batches.push({
-      bottom: meshes[0],
-      top: meshes[1] ?? null,
-      centre: geometry.boundingSphere!.center,
-      radius: Math.PI,
-    });
-
     // The shadow-pass twin: same geometry, same parent (so animated child
     // nodes cast moving shadows via the inherited modelMatrix), but a
     // depth-only material and a layer the main camera never renders.
-    if (shared.shadowsEnabled && opts.castShadow !== false) {
-      const depthMat = createShadowDepthMaterial(shared, this.placement, opts);
-      const depthMesh = new Mesh(geometry, depthMat);
-      depthMesh.frustumCulled = false;
-      depthMesh.matrixAutoUpdate = false;
-      depthMesh.layers.set(SHADOW_LAYER);
-      parent.add(depthMesh);
-      this.depth.push(depthMesh);
-      this.materials.push(depthMat);
+    const depthMat =
+      shared.shadowsEnabled && opts.castShadow !== false
+        ? createShadowDepthMaterial(shared, this.placement, opts)
+        : null;
+    if (depthMat) this.materials.push(depthMat);
+
+    const mesh = (geometry: BufferGeometry, mat: HyperMaterial): Mesh => {
+      const m = new Mesh(geometry, mat);
+      // Three's frustum culling is Euclidean and will cull geometry that is
+      // plainly visible. HyperEngine disables culling outright in spherical
+      // space for the same reason.
+      m.frustumCulled = false;
+      m.matrixAutoUpdate = false;
+      parent.add(m);
+      return m;
+    };
+    for (const geometry of pieces) {
+      const bottom = mesh(geometry, mats[0]);
+      const top = mats[1] ? mesh(geometry, mats[1]) : null;
+      const depth = depthMat ? mesh(geometry, depthMat) : null;
+      this.bottom.push(bottom);
+      if (top) this.top.push(top);
+      if (depth) {
+        depth.layers.set(SHADOW_LAYER);
+        this.depth.push(depth);
+      }
+      this.batches.push({
+        bottom,
+        top,
+        depth,
+        centre: geometry.boundingSphere!.center,
+        radius: Math.PI,
+        viewDir: new Vector3(),
+        viewNear: 0,
+        viewFar: Math.PI,
+        viewSine: 2,
+      });
     }
 
     this.showBottom = this.showTop = this.showDepth = true;
     return mats;
   }
 
-  private flush(): void {
+  flush(): void {
     if (this.pending.length > 0) {
       const batches = new Map<string, Pending[]>();
       for (const part of this.pending) {
@@ -799,19 +863,40 @@ export class HyperObject extends Group {
     this.updateMatrixWorld();
   }
 
-  show(inFrustum: boolean, castsShadow: boolean): void {
-    const bottom = inFrustum && this.viewNear < NEAR_PASS_REACH;
-    const top = inFrustum && this.viewFar > NEAR_PASS_REACH;
+  /** With `cull`, each batch is tested on its own; without, they all follow the object. */
+  show(inFrustum: boolean, castsShadow: boolean, cull?: Cull): void {
+    let bottom = inFrustum && this.viewNear < NEAR_PASS_REACH;
+    let top = inFrustum && this.viewFar > NEAR_PASS_REACH;
     castsShadow &&= this.depth.length > 0;
 
-    if (bottom && top && this.batches.length > 1) {
+    if (cull && this.batches.length > 1 && (inFrustum || castsShadow)) {
+      let casts = false;
+      bottom = top = false;
       for (const batch of this.batches) {
         const p = lifted(batch.bottom, scratch.copy(batch.centre));
-        const distance = 2 * Math.atan(mobiusAdd(this.composed.vec, p, p).length());
-        batch.bottom.visible = distance - batch.radius < NEAR_PASS_REACH;
-        if (batch.top) batch.top.visible = distance + batch.radius > NEAR_PASS_REACH;
+        mobiusAdd(this.composed.vec, p, p).applyQuaternion(this.composed.gyr);
+        const r = p.length();
+        const distance = 2 * Math.atan(r);
+        batch.viewNear = distance - batch.radius;
+        batch.viewFar = distance + batch.radius;
+        if (r > 1e-9) batch.viewDir.copy(p).divideScalar(r);
+        batch.viewSine = subtendedSine(distance, batch.radius);
+
+        const seen = inFrustum && cull.sees(batch);
+        batch.bottom.visible = seen && batch.viewNear < NEAR_PASS_REACH;
+        bottom ||= batch.bottom.visible;
+        if (batch.top) {
+          batch.top.visible = seen && batch.viewFar > NEAR_PASS_REACH;
+          top ||= batch.top.visible;
+        }
+        if (batch.depth) {
+          // Whether the object's shadow can fall in view is decided for the whole object: the test assumes it stands on the ground.
+          batch.depth.visible = castsShadow && cull.castsIntoMap(batch);
+          casts ||= batch.depth.visible;
+        }
       }
-      this.showBottom = this.showTop = null;
+      castsShadow = casts;
+      this.showBottom = this.showTop = this.showDepth = null;
     } else {
       if (bottom !== this.showBottom) {
         this.showBottom = bottom;
@@ -821,10 +906,10 @@ export class HyperObject extends Group {
         this.showTop = top;
         for (const mesh of this.top) mesh.visible = top;
       }
-    }
-    if (castsShadow !== this.showDepth) {
-      this.showDepth = castsShadow;
-      for (const mesh of this.depth) mesh.visible = castsShadow;
+      if (castsShadow !== this.showDepth) {
+        this.showDepth = castsShadow;
+        for (const mesh of this.depth) mesh.visible = castsShadow;
+      }
     }
 
     this.visible = bottom || top || castsShadow;

@@ -7,6 +7,7 @@ import {
   CylinderGeometry,
   ExtrudeGeometry,
   Float32BufferAttribute,
+  ImageBitmapLoader,
   LinearFilter,
   LinearMipmapLinearFilter,
   Matrix4,
@@ -18,12 +19,12 @@ import {
   ShapeGeometry,
   ShapeUtils,
   SphereGeometry,
+  Texture,
   TextureLoader,
   TorusGeometry,
   TubeGeometry,
   Vector2,
   Vector3,
-  type Texture,
 } from 'three';
 import { HyperObject, type HyperMaterialOptions, type HyperWorld } from '../../engine';
 import { L } from '../../content/i18n';
@@ -380,7 +381,7 @@ function sampler(tex: Texture | null): (u: number, v: number) => Rgb {
     const data = ctx.getImageData(0, 0, N, N).data;
     return (u, v) => {
       const x = Math.min(N - 1, Math.max(0, Math.floor(u * N)));
-      const y = Math.min(N - 1, Math.max(0, Math.floor((1 - v) * N)));
+      const y = Math.min(N - 1, Math.max(0, Math.floor((tex.flipY ? 1 - v : v) * N)));
       const i = (y * N + x) * 4;
       return [data[i] / 255, data[i + 1] / 255, data[i + 2] / 255];
     };
@@ -492,6 +493,13 @@ function canvas(w: number, h: number, bottom: number, tex: Texture | null, rnd: 
 }
 
 const loader = new TextureLoader();
+// Flipped as it is decoded, off the main thread, so the upload need not flip it.
+const bitmaps = new ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none' });
+// The browsers three's own loaders keep off bitmaps: there the flip cannot be relied on.
+const UA = navigator.userAgent;
+const BITMAPS =
+  !(/^((?!chrome|android).)*safari/i.test(UA) && Number(UA.match(/Version\/(\d+)/)?.[1] ?? 0) < 17) &&
+  Number(UA.match(/Firefox\/(\d+)/)?.[1] ?? 98) >= 98;
 
 function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
   const spot = easelSpot(spec.azimuth);
@@ -683,18 +691,27 @@ function buildEasel(world: HyperWorld, spec: EaselSpec): HyperObject {
     }
   };
 
-  loader.load(
-    spec.url,
-    (tex: Texture) => {
-      tex.colorSpace = NoColorSpace;
-      tex.minFilter = LinearMipmapLinearFilter;
-      tex.magFilter = LinearFilter;
-      tex.anisotropy = 8;
-      finish(tex);
-    },
-    undefined,
-    () => finish(null),
-  );
+  const loaded = (tex: Texture): void => {
+    tex.colorSpace = NoColorSpace;
+    tex.minFilter = LinearMipmapLinearFilter;
+    tex.magFilter = LinearFilter;
+    tex.anisotropy = 8;
+    finish(tex);
+  };
+  const viaImage = (): void => void loader.load(spec.url, loaded, undefined, () => finish(null));
+  if (BITMAPS) {
+    bitmaps.load(
+      spec.url,
+      (bitmap) => {
+        const tex = new Texture(bitmap);
+        tex.flipY = false;
+        tex.needsUpdate = true;
+        loaded(tex);
+      },
+      undefined,
+      viaImage,
+    );
+  } else viaImage();
 
   return object;
 }

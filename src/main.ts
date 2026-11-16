@@ -240,18 +240,21 @@ async function boot(): Promise<void> {
 
   await stage(UI.loadingWorld, 0.05);
   buildGround();
+  world.compile();
 
   // ------------------------------------------------------------------- world
   // Structure only: the aisle, the arch, and the portrait far ahead. Detail
   // comes later.
   await stage(UI.loadingStructure, 0.2);
   const skeleton = buildSkeleton(world);
+  world.compile();
 
   await stage(UI.loadingStations, 0.4);
   const stations = buildStations(world);
 
   await stage(UI.loadingLandmarks, 0.65);
   const landmarks = buildLandmarks(world);
+  world.compile();
 
   pois.push(...skeleton.pois, ...stations.pois, ...landmarks.pois);
   const panel = new ProximityPanel();
@@ -417,6 +420,7 @@ async function boot(): Promise<void> {
 
   // One full frame drawn before the curtain lifts, so the first thing anyone
   // sees is the world and not a flash of clear colour.
+  world.compile();
   await stage(UI.loadingFirstFrame, 0.97);
   // Unculled, so every program, buffer and texture reaches the GPU now and
   // not as a hitch the first time each thing walks into view.

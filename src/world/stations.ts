@@ -42,6 +42,7 @@ export function buildStations(world: HyperWorld): Built {
     const custom = EXHIBITS[s.id];
     if (custom) custom(world, at, yaw, out);
     else out.objects.push(buildPlaceholderExhibit(world, at, yaw));
+    world.compile();
   }
 
   // Cameras along the whole route, not only at the security station. Small and

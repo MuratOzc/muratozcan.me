@@ -15,7 +15,7 @@ import {
 import type { HyperMaterialOptions } from '../../engine';
 import { L, t, upper } from '../../content/i18n';
 import { across, grained, lathe, moved, pos, rod, roundedRect, trace, type Part, type Point } from '../geometry';
-import { localizedCanvasTexture } from '../text';
+import { localizedCanvasTexture, shrinkToFit } from '../text';
 import { pencil } from './stationery';
 
 // Every solid here needs gloss, metal or grain above zero: a part with none of them lands in a second batch.
@@ -153,16 +153,14 @@ function arcText(
   topsInward: boolean,
 ): void {
   const chars = [...text];
-  let size = startPx;
   let widths: number[] = [];
   let total = 0;
-  do {
+  shrinkToFit(startPx, 10, maxSpan * r, (size) => {
     ctx.font = `700 ${size}px ${SANS}`;
     widths = chars.map((ch) => ctx.measureText(ch).width + size * 0.14);
     total = widths.reduce((a, b) => a + b, 0);
-    if (total / r <= maxSpan) break;
-    size -= 1;
-  } while (size > 10);
+    return total;
+  });
 
   const dir = topsInward ? -1 : 1;
   let angle = middle - (dir * total) / r / 2;
@@ -241,12 +239,10 @@ function paintGroundAngle(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = '#3f4a3a';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  let size = 240;
-  do {
+  shrinkToFit(240, 40, 470, (size) => {
     ctx.font = `600 ${size}px ui-monospace, Consolas, monospace`;
-    if (ctx.measureText('90°').width <= 470) break;
-    size -= 4;
-  } while (size > 40);
+    return ctx.measureText('90°').width;
+  });
   ctx.fillText('90°', 256, 134);
   ctx.restore();
 }
@@ -270,12 +266,10 @@ function paintNameplate(ctx: CanvasRenderingContext2D): void {
 }
 
 function fitLine(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, startPx: number, family: string): void {
-  let size = startPx;
-  do {
+  shrinkToFit(startPx, 12, maxWidth, (size) => {
     ctx.font = `400 ${size}px ${family}`;
-    if (ctx.measureText(text).width <= maxWidth) break;
-    size -= 2;
-  } while (size > 12);
+    return ctx.measureText(text).width;
+  });
 }
 
 const BOOK_PX: [number, number, number, number] = [0, 512, 768, 1024];

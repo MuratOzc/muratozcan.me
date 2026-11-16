@@ -1,6 +1,6 @@
 import type { BufferGeometry, Texture } from 'three';
 import { L, t, upper } from '../../content/i18n';
-import { localizedCanvasTexture } from '../text';
+import { largestFitting, localizedCanvasTexture, shrinkToFit } from '../text';
 
 const ATLAS_W = 2048;
 const ATLAS_H = 1024;
@@ -52,10 +52,10 @@ function wrap(ctx: CanvasRenderingContext2D, words: string[], width: number): st
 }
 
 function fitLine(ctx: CanvasRenderingContext2D, text: string, font: string, width: number, max: number): void {
-  for (let size = max; size > 8; size -= 2) {
+  shrinkToFit(max, 8, width, (size) => {
     ctx.font = font.replace('SIZE', String(size));
-    if (ctx.measureText(text).width <= width) return;
-  }
+    return ctx.measureText(text).width;
+  });
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -123,15 +123,19 @@ function paintSign(ctx: CanvasRenderingContext2D, w: number, h: number): void {
   ctx.fillStyle = '#17191c';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (let size = 170; size >= 30; size -= 2) {
+  const layout = (size: number) => {
     ctx.font = `900 ${size}px ${POSTER}`;
-    const lines = wrap(ctx, words, box.w);
-    const lineHeight = size * 1.06;
-    if (!lines || lines.length * lineHeight > box.h) continue;
-    const first = box.y + box.h / 2 - ((lines.length - 1) * lineHeight) / 2;
-    lines.forEach((line, i) => ctx.fillText(line, w / 2, first + i * lineHeight + size * 0.04));
-    break;
-  }
+    return wrap(ctx, words, box.w);
+  };
+  const size = largestFitting(30, 170, (s) => {
+    const lines = layout(s);
+    return !!lines && lines.length * s * 1.06 <= box.h;
+  });
+  const lines = layout(size);
+  if (!lines) return;
+  const lineHeight = size * 1.06;
+  const first = box.y + box.h / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, w / 2, first + i * lineHeight + size * 0.04));
 }
 
 function paintGilding(ctx: CanvasRenderingContext2D, w: number, h: number): void {
