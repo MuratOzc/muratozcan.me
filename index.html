@@ -22,7 +22,8 @@
   #hud { top: 10px; left: 10px; pointer-events: none; }
   #tests { bottom: 10px; left: 10px; max-width: 62ch; white-space: pre-wrap; }
   /* Clears the settings button, which owns the top-right corner. */
-  #help { top: 54px; right: 10px; pointer-events: none; }
+  #help { top: 54px; right: 10px; pointer-events: none; transition: opacity .6s; }
+  #help.seen { opacity: 0; }
   b { color: #7fd3f7; font-weight: 600; }
   .pass { color: #7ee787; } .fail { color: #ff7b72; }
   [hidden] { display: none !important; }
@@ -39,7 +40,7 @@
     /* Content-driven up to the cap, so this only ever removes line breaks —
        44ch was wrapping station copy into a tall column in the middle of the
        screen. The vw term keeps it from spanning an ultrawide monitor. */
-    max-width: min(68ch, 72vw); padding: 14px 18px; text-align: center;
+    width: max-content; max-width: min(68ch, 72vw); padding: 14px 18px; text-align: center;
     pointer-events: none; visibility: hidden;
     background: #0b0d10d9; border: 1px solid #39424e; border-radius: 5px;
     backdrop-filter: blur(6px);
@@ -263,8 +264,8 @@
        function of the resolution setting, which scales the drawing buffer and
        cannot touch anything in the DOM. */
     .panel { font-size: 10px; padding: 7px 9px; }
-    .proximity-panel { font-size: 11.5px; padding: 10px 14px; }
-    .proximity-panel h2 { font-size: 11px; }
+    .proximity-panel { font-size: 11px; padding: 7px 12px; }
+    .proximity-panel h2 { font-size: 10px; }
     .aim-prompt { font-size: 10px; padding: 4px 9px; }
     #settings { font-size: 12px; }
     #rotate { font-size: 12px; }
@@ -281,15 +282,20 @@
   @media (max-height: 560px) {
     #tests { display: none; }
     .aim-prompt { top: auto; bottom: calc(50% + 22px); }
-    .proximity-panel {
-      bottom: 10px; line-height: 1.5;
-      /* Narrow enough to clear the sprint button in the bottom-right. */
-      max-width: min(62ch, 62vw);
-    }
+    .proximity-panel { bottom: 10px; line-height: 1.5; }
     .proximity-panel h2 { margin-bottom: 2px; }
   }
   @media (max-height: 460px) {
     #sprint { width: 56px; height: 56px; right: 16px; bottom: 16px; }
+  }
+  @media (pointer: coarse) and (max-height: 560px) {
+    /* 216px keeps the panel clear of the sprint button. */
+    .proximity-panel { max-width: min(92ch, 100vw - 216px); line-height: 1.4; }
+    .proximity-panel h2 { margin-bottom: 0; }
+  }
+  @media (pointer: coarse) and (orientation: portrait) {
+    /* 100px lifts the panel over the sprint button. */
+    .proximity-panel { max-width: calc(100vw - 50px); bottom: 100px; line-height: 1.4; }
   }
 </style>
 </head>

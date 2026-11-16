@@ -267,7 +267,14 @@ async function boot(): Promise<void> {
     pointerLock: !isTouch,
   });
   controls.reset();
-  if (isTouch) attachTouchControls(controls, canvas);
+  if (isTouch) {
+    attachTouchControls(controls, canvas);
+    canvas.addEventListener(
+      'pointerdown',
+      () => setTimeout(() => help.classList.add('seen'), 8000),
+      { once: true },
+    );
+  }
 
   addEventListener('resize', () => world.resize());
   addEventListener('orientationchange', () => world.resize());
@@ -308,6 +315,7 @@ async function boot(): Promise<void> {
       governor.reset();
     }
 
+    if (s.showHelp && help.hidden) help.classList.remove('seen');
     help.hidden = !s.showHelp;
     hud.hidden = !s.showDetails;
     tests.hidden = !s.showTests;
