@@ -60,9 +60,6 @@ import { localizedCanvasTexture, shrinkToFit } from '../text';
 
 const FEED_W = 640;
 const FEED_H = 400;
-/** Sine of the apparent half-angle at which the feed runs at its full rate. */
-const FULL_RATE_SIZE = 0.3;
-const MAX_INTERVAL = 2;
 /** Page size in authored units: matches the feed's 1.6 aspect. */
 const SCREEN_W = 1.04;
 const SCREEN_H = 0.65;
@@ -627,9 +624,7 @@ export function buildMonitor(
     // every-Nth-frame: the cost must not scale with how fast the machine
     // happens to run.
     since += dt;
-    const size = Math.min(1, object.viewSine / FULL_RATE_SIZE);
-    const interval = Math.min(MAX_INTERVAL, world.quality.auxInterval / (size * size));
-    if (since < interval || !object.inView) return;
+    if (since < world.quality.auxInterval || !object.inView) return;
     since = 0;
 
     const read = frame === 0 ? null : targets[frame % 2];
