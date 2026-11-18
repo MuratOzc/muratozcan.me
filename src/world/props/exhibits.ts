@@ -40,7 +40,9 @@ export const EXHIBITS: Record<
     out.objects.push(buildSignpost(world, at, yaw));
   },
   origin(world, at, yaw, out) {
-    out.objects.push(buildSchoolDesk(world, at, yaw));
+    const desk = buildSchoolDesk(world, at, yaw);
+    out.objects.push(desk.object);
+    out.tickers.push(desk.tick);
   },
   architecture(world, at, yaw, out) {
     const model = buildWorldModel(world, at, yaw);

@@ -41,6 +41,18 @@ import { localizedCanvasTexture, shrinkToFit } from '../text';
  * composition per camera per frame.
  */
 
+const ALARM_SLEW = 4;
+const ALARM_BLINK = 0.24;
+let alarmUntil = 0;
+
+export function raiseAlarm(seconds: number): void {
+  alarmUntil = performance.now() + seconds * 1000;
+}
+
+export function alarmRaised(): boolean {
+  return performance.now() < alarmUntil;
+}
+
 /**
  * A camera that turns to face the viewer.
  *
@@ -105,7 +117,7 @@ export class Watcher {
     const targetYaw = Math.atan2(-dx, -dz) - this.baseYaw;
     const targetPitch = Math.atan2(dy, horizontal);
 
-    const step = this.slew * dt;
+    const step = this.slew * dt * (alarmRaised() ? ALARM_SLEW : 1);
     this.yaw += clampAngle(targetYaw - this.yaw) * Math.min(1, step);
     this.pitch += (targetPitch - this.pitch) * Math.min(1, step);
 
@@ -568,7 +580,8 @@ class Camera extends Watcher {
   override update(worldGV: GyroVector, dt: number): void {
     super.update(worldGV, dt);
     this.clock += dt;
-    const lit = this.clock % BLINK < BLINK / 2;
+    const period = alarmRaised() ? ALARM_BLINK : BLINK;
+    const lit = this.clock % period < period / 2;
     if (lit === this.lit) return;
     this.lamp ??= findLamp(this.head);
     if (!this.lamp) return;

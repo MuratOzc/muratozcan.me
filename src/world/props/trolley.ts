@@ -18,8 +18,11 @@ import {
   type HyperMaterialOptions,
   type HyperWorld,
 } from '../../engine';
+import { sfx } from '../../audio';
 import { L, t, upper } from '../../content/i18n';
 import { box, grained, lathe, moved, pos, smooth, trace, type Part, type Point } from '../geometry';
+import { Aim } from '../interact';
+import { setNight } from '../sky';
 import { localizedCanvasTexture, shrinkToFit } from '../text';
 import { ATLAS, GREEN, Lamps, decal, fillet, paver, sweep, v3, type Region } from './trolleyKit';
 import { buildServer, type Server, type ServerSpec } from './trolleyServers';
@@ -631,8 +634,8 @@ function cloche(radius: number, height: number, links: number, stretch: number):
   return parts;
 }
 
-function bell(): Part[] {
-  return [
+function bell(): { body: Part[]; plunger: Part[] } {
+  const body: Part[] = [
     [lathe([[0.001, 0], [0.056, 0], [0.058, 0.004], [0.055, 0.011], [0.05, 0.013], [0.001, 0.013]], 18), BAKELITE],
     [
       lathe(
@@ -650,9 +653,27 @@ function bell(): Part[] {
       ),
       BRASS,
     ],
+  ];
+  const plunger: Part[] = [
     [lathe([[0.008, 0.06], [0.008, 0.064], [0.0045, 0.066], [0.0045, 0.076]], 8), CHROME],
     [lathe([[0.0045, 0.075], [0.012, 0.077], [0.013, 0.081], [0.009, 0.085], [0.001, 0.086]], 10), CHROME],
   ];
+  return { body, plunger };
+}
+
+const BELL_AT = v3(0.326, TOP, 0.3);
+const PLUNGE = 0.008;
+const PLUNGE_DOWN = 0.045;
+const PLUNGE_OVER = 0.6;
+const DUSK = 1.5;
+const NIGHT_HOLD = 8;
+const DAWN = 2.5;
+const RING = L('Ring the bell', 'Zili çal');
+
+function plungerDrop(since: number): number {
+  if (since < PLUNGE_DOWN) return PLUNGE * (since / PLUNGE_DOWN);
+  const back = since - PLUNGE_DOWN;
+  return PLUNGE * Math.exp(-back * 16) * Math.cos(back * 26);
 }
 
 function cutlery(): Part[] {
@@ -971,7 +992,12 @@ export function buildTrolley(world: HyperWorld, at: GyroVector, yaw: number): Tr
   put(outlet.parts);
   printed.push(...outlet.faces);
 
-  put(moved(bell(), 0.326, TOP, 0.3));
+  const chime = bell();
+  put(moved(chime.body, BELL_AT.x, BELL_AT.y, BELL_AT.z));
+  const plungerNode = new Group();
+  plungerNode.position.copy(BELL_AT);
+  object.add(plungerNode);
+  put(chime.plunger, plungerNode);
   put(moved(napkin(), -0.57, TOP, 0.294, 0.05));
   const card = tentCard();
   put(moved(card.parts, -0.328, TOP, 0.31));
@@ -1003,19 +1029,51 @@ export function buildTrolley(world: HyperWorld, at: GyroVector, yaw: number): Tr
 
   let clock = 0;
   let since = Infinity;
-  const tick = (_worldGV: GyroVector, dt: number) => {
+  let rungAt = -Infinity;
+  let nightUntil = -Infinity;
+  let night = 0;
+  let dark = 0;
+  let shown = 0;
+  let hurried = 0;
+
+  const aim = new Aim(world, object);
+  aim.add({
+    name: RING,
+    at: v3(BELL_AT.x, BELL_AT.y + 0.05, BELL_AT.z),
+    size: 0.12,
+    use: () => {
+      rungAt = clock;
+      // From wherever the sky already is, so a second ring only lengthens the night.
+      nightUntil = clock + DUSK * (1 - night) + NIGHT_HOLD;
+      sfx.bell();
+    },
+  });
+
+  const tick = (worldGV: GyroVector, dt: number) => {
     clock += dt;
     hung.forEach((node, i) => {
       node.rotation.x = 0.013 * Math.sin(clock * (1.7 + i * 0.21) + i * 2.1) + 0.006 * Math.sin(clock * 0.63 + i);
       node.rotation.z = 0.008 * Math.sin(clock * (1.45 + i * 0.17) + i * 1.3);
     });
 
+    aim.update(worldGV);
+    const rung = clock - rungAt;
+    plungerNode.position.y = BELL_AT.y - (rung < PLUNGE_OVER ? plungerDrop(rung) : 0);
+
+    night = clock < nightUntil ? Math.min(1, night + dt / DUSK) : Math.max(0, night - dt / DAWN);
+    dark = night * night * (3 - 2 * night);
+    if (dark !== shown) {
+      shown = dark;
+      setNight(world, dark);
+    }
+    hurried += dt * (1 + 2.2 * dark);
+
     since += dt;
-    if (since < 0.09) return;
+    if (since < 0.09 - 0.045 * dark) return;
     since = 0;
-    lamps.repaint(clock);
+    lamps.repaint(clock, hurried, dark);
   };
-  tick(at, 0);
+  lamps.repaint(0);
 
   return { object, tick };
 }

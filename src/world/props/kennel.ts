@@ -26,8 +26,13 @@ import {
   type HyperMaterialOptions,
   type HyperWorld,
 } from '../../engine';
+import { sfx } from '../../audio';
+import { L } from '../../content/i18n';
 import { box, grained, lathe, merge, moved, pos, roundedRect, trace, type Part, type Point } from '../geometry';
+import { Aim } from '../interact';
+import { raiseAlarm } from './cameras';
 import { CHAIN_REST, LINK_PITCH, RING_SPAN, makeChain, walk } from './chain';
+import { incidentBoard } from './incidentBoard';
 import { BOWL_NAME, NAME_BOARD, SIGN_FACE, intoRegion, kennelAtlas } from './kennelArt';
 import { safe } from './vault';
 
@@ -760,6 +765,23 @@ function eyes(): BufferGeometry[] {
   return [merge(out[0]), merge(out[1])];
 }
 
+function happyEyes(): BufferGeometry {
+  const R = 0.03;
+  const THICK = 0.012;
+  const tip = Math.asin(THICK / (2 * R));
+  const N = 12;
+  const arc: Point[] = [];
+  for (let i = 0; i <= N; i++) {
+    const a = -tip + (i / N) * (Math.PI + 2 * tip);
+    arc.push([Math.cos(a) * R, Math.sin(a) * R]);
+  }
+  for (let i = 1; i < N; i++) {
+    const a = Math.PI - tip - (i / N) * (Math.PI - 2 * tip);
+    arc.push([Math.cos(a) * R, Math.sin(a) * R - THICK]);
+  }
+  return merge([-1, 1].map((sx) => new ShapeGeometry(trace(new Shape(), arc)).translate(sx * 0.058, 0.002, 0)));
+}
+
 export interface KennelResult {
   object: HyperObject;
   tick: (worldGV: GyroVector, dt: number) => void;
@@ -773,6 +795,16 @@ const RELEASE = 2.9;
 const HEAD_X = -0.06;
 const HEAD_Z = FRONT - 0.27;
 const HEAD_SWAY = 0.42;
+
+const SAFE_AT: [number, number, number] = [0.95, 0, -1.08];
+const SAFE_TURN = 0.7;
+const BOARD_AT: [number, number, number, number] = [1.62, 0, -1.72, 0.1];
+const T_ALARM = 0.55;
+const INCIDENT = 6;
+const PET_RANGE = 2.2;
+
+const OPEN_SAFE = L('Open the safe', 'Kasayı aç');
+const PET_DOG = L('Pet the dog', 'Köpeği sev');
 
 export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): KennelResult {
   const object = new HyperObject(at);
@@ -807,7 +839,21 @@ export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): Ken
   put(moved([...sign.parts, [sign.face, { ...DECAL, map: atlas }]], 1.5, EARTH, 1.05, 0.22));
 
   const strongbox = safe();
-  put(moved([...strongbox.parts, [strongbox.gilding, { ...CUTOUT, map: atlas }]], 0.95, 0, -1.08, 0.7));
+  put(moved([...strongbox.parts, [strongbox.gilding, { ...CUTOUT, map: atlas }]], SAFE_AT[0], SAFE_AT[1], SAFE_AT[2], SAFE_TURN));
+  const safeNode = new Group();
+  safeNode.position.set(...SAFE_AT);
+  safeNode.rotation.y = SAFE_TURN;
+  object.add(safeNode);
+  const handleNode = new Group();
+  handleNode.position.copy(strongbox.handleAt);
+  safeNode.add(handleNode);
+  put([strongbox.handle], handleNode);
+  const safeDoor = new Group();
+  safeDoor.position.copy(strongbox.doorAt);
+  safeNode.add(safeDoor);
+
+  const board = incidentBoard();
+  put(moved([...board.parts, [board.face, { ...DECAL, map: board.map }]], ...BOARD_AT));
 
   const kennelNode = new Group();
   kennelNode.position.set(KENNEL_X, EARTH, KENNEL_Z);
@@ -823,6 +869,13 @@ export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): Ken
   const glow = { ambient: 1, castShadow: false, receiveShadow: false };
   object.addGeometry(world.shared, iris, { ...glow, color: 0xfff07a }, lids);
   object.addGeometry(world.shared, pupil, { ...glow, color: 0x050505 }, lids);
+  const smile = new Group();
+  smile.scale.y = 0;
+  headNode.add(smile);
+  object.addGeometry(world.shared, happyEyes(), { ...glow, color: 0xfff07a }, smile);
+  const doorwayNode = new Group();
+  doorwayNode.position.set(0, FLOOR + 0.28, FRONT);
+  kennelNode.add(doorwayNode);
 
   const chain = makeChain(LINKS);
   const joints = Array.from({ length: chain.joints }, () => new Vector3());
@@ -892,24 +945,73 @@ export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): Ken
   let headYaw = 0;
   let headPitch = 0;
   let headX = HEAD_X;
+  let incident = -1;
+  let calm = false;
+  let happy = 0;
+
+  const aim = new Aim(world, object);
+  aim.add({
+    name: OPEN_SAFE,
+    at: safeDoor,
+    size: 0.36,
+    range: 3,
+    front: new Vector3(Math.sin(SAFE_TURN), 0, Math.cos(SAFE_TURN)),
+    enabled: () => incident < 0,
+    use: () => {
+      incident = 0;
+      sfx.rattle();
+      sfx.alarm(4, T_ALARM);
+      sfx.chain(T_ALARM);
+      sfx.bark(T_ALARM + 0.1);
+      sfx.bark(T_ALARM + 0.42);
+      sfx.growl(T_ALARM + 0.85);
+    },
+  });
+  aim.add({
+    name: PET_DOG,
+    at: doorwayNode,
+    size: 0.34,
+    range: PET_RANGE,
+    front: new Vector3(Math.sin(KENNEL_TURN), 0, Math.cos(KENNEL_TURN)),
+    enabled: () => !calm && incident < 0,
+    use: () => {
+      calm = true;
+      sfx.whine();
+    },
+  });
 
   const tick = (worldGV: GyroVector, dt: number): void => {
     clock += dt;
+    aim.update(worldGV);
+
+    if (incident >= 0) {
+      const before = incident;
+      incident += dt;
+      if (before < T_ALARM && incident >= T_ALARM) {
+        raiseAlarm(INCIDENT);
+        calm = false;
+        board.trip();
+      }
+      if (incident >= T_ALARM + INCIDENT) incident = -1;
+    }
+    const alarmed = incident >= T_ALARM;
+    handleNode.rotation.z =
+      incident >= 0 && incident < 1.2 ? 0.4 * Math.exp(-4.2 * incident) * Math.abs(Math.sin(incident * 14)) : 0;
+    board.tick(dt);
 
     object.localGV.add(worldGV).inverse().point(viewer);
     const far = (2 * Math.atan(viewer.length())) / HM.unitScale;
     let aimYaw = 0;
     let aimPitch = 0;
     let aimX = HEAD_X;
-    let near = false;
+    let reach = Infinity;
     const stood = pull * pull * (3 - 2 * pull);
     const headY = FLOOR + 0.2 + 0.44 * stood + 0.006 * Math.sin(clock * 1.7);
     // Unit coordinates go through the gnomonic chart, which turns inside out a quarter of the way round the world.
     if (far < 13) {
       poincareToUnit(viewer, true, viewer).applyAxisAngle(UP, -yaw);
       viewer.set(viewer.x - KENNEL_X, viewer.y - EARTH, viewer.z - KENNEL_Z).applyAxisAngle(UP, -KENNEL_TURN);
-      const reach = Math.hypot(viewer.x, viewer.z - FRONT);
-      near = reach < (taut ? RELEASE : NEAR);
+      reach = Math.hypot(viewer.x, viewer.z - FRONT);
       if (viewer.z > FRONT + 0.2) {
         const k = (FRONT - HEAD_Z) / (viewer.z - HEAD_Z);
         aimX = Math.max(-HEAD_SWAY, Math.min(HEAD_SWAY, (HEAD_X - viewer.x * k) / (1 - k)));
@@ -919,7 +1021,8 @@ export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): Ken
       aimYaw = Math.max(-1.15, Math.min(1.15, Math.atan2(dx, dz)));
       aimPitch = Math.max(-0.5, Math.min(0.3, -Math.atan2(viewer.y - headY, Math.hypot(dx, dz))));
     }
-    taut = near;
+    if (reach > RELEASE) calm = false;
+    taut = alarmed || (!calm && reach < (taut ? RELEASE : NEAR));
 
     pull += ((taut ? 1 : 0) - pull) * (1 - Math.exp(-dt * (taut ? 9 : 1.8)));
     const eased = pull * pull * (3 - 2 * pull);
@@ -943,7 +1046,9 @@ export function buildKennel(world: HyperWorld, at: GyroVector, yaw: number): Ken
     const a = clock % 5.3;
     const b = clock % 7.9;
     const shut = Math.min(Math.abs(a - 0.07), Math.abs(b - 7.8)) / 0.07;
-    lids.scale.y = (0.06 + 0.94 * Math.min(1, shut)) * (1 - 0.22 * eased);
+    happy += ((calm ? 1 : 0) - happy) * (1 - Math.exp(-dt * 6));
+    lids.scale.y = (0.06 + 0.94 * Math.min(1, shut)) * (1 - 0.22 * eased) * (1 - happy);
+    smile.scale.y = happy;
   };
 
   return { object, tick };

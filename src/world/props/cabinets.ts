@@ -7,7 +7,9 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
+import { sfx } from '../../audio';
 import { merge } from '../geometry';
+import { Aim } from '../interact';
 import { localizedCanvasTexture, shrinkToFit } from '../text';
 import {
   DRAWERS,
@@ -89,14 +91,23 @@ const CLOSING = 1.3;
 const NEAR = 24;
 const AT_ONCE = 2;
 
+const QUERY = L('SELECT *', 'SELECT *');
+const SWEEP = 6;
+const SWEEP_EASE = 0.8;
+const WAVE_OPENING = 0.4;
+const WAVE_HELD = 0.2;
+const WAVE_CLOSING = 0.6;
+const WAVE_LENGTH = WAVE_OPENING + WAVE_HELD + WAVE_CLOSING;
+const HEARD = [1, 0.75, 0.55, 0.4, 0.28];
+
 function eased(u: number): number {
   const x = Math.min(1, Math.max(0, u));
   return x * x * (3 - 2 * x);
 }
 
-function openness(at: number, held: number): number {
-  if (at < OPENING) return eased(at / OPENING);
-  return 1 - eased((at - OPENING - held) / CLOSING);
+function openness(at: number, held: number, opening = OPENING, closing = CLOSING): number {
+  if (at < opening) return eased(at / opening);
+  return 1 - eased((at - opening - held) / closing);
 }
 
 interface Ride {
@@ -107,6 +118,8 @@ interface Ride {
   home: Vector3;
   started: number;
   held: number;
+  random: number;
+  wave: number;
 }
 
 interface Pool {
@@ -202,6 +215,7 @@ export function buildCabinets(world: HyperWorld, at: GyroVector, yaw: number): C
   for (const object of [floor, end, run, farRun, crown]) world.add(object);
 
   const pools: Pool[] = [0, 1, 2].map(() => ({ idle: [], busy: [], next: 0 }));
+  const inOrder: Ride[] = [];
   for (const i of MOVING) {
     const seat = drawerSeat(i);
     const chart = homes[seat.zone].chart;
@@ -213,16 +227,69 @@ export function buildCabinets(world: HyperWorld, at: GyroVector, yaw: number): C
       home: place(chart, 0, seat.y, seat.z, new Vector3()),
       started: 0,
       held: 0,
+      random: 0,
+      wave: 0,
     };
     pools[i < NEAR ? 0 : i >= DRAWERS - NEAR ? 2 : 1].idle.push(ride);
+    // MOVING ascends, and a drawer's number is its place along the cabinet.
+    inOrder.push(ride);
   }
 
+  const startOf = (k: number): number => SWEEP * (k / (inOrder.length - 1)) ** SWEEP_EASE;
+
   const shift = new Vector3();
+  // A drawer pushed straight out in authored space climbs off its runners: its path is the cabinet's own straight line, mapped into the chart.
+  const slide = (ride: Ride): void => {
+    const out = TRAVEL * Math.max(ride.random, ride.wave);
+    place(ride.chart, 0, ride.y, ride.z + out, shift).sub(ride.home);
+    for (const part of ride.parts) part.moveTo(shift.x, shift.y, shift.z);
+  };
+
   let clock = 0;
-  const tick = (_worldGV: GyroVector, dt: number): void => {
+  let waveAt: number | null = null;
+  let head = 0;
+  let tail = 0;
+
+  const aim = new Aim(world, floor);
+  aim.add({
+    name: QUERY,
+    at: new Vector3(0, 1.05, 0.33),
+    size: 0.42,
+    front: new Vector3(0, 0, 1),
+    enabled: () => waveAt === null,
+    use: () => {
+      waveAt = clock;
+      head = 0;
+      tail = 0;
+      HEARD.forEach((gain, n) => {
+        sfx.drawer(startOf(n * 2), gain);
+        if (n < 3) sfx.shut(startOf(n * 2) + WAVE_LENGTH - 0.08, gain * 0.8);
+      });
+    },
+  });
+
+  const wave = (): void => {
+    if (waveAt === null) return;
+    const since = clock - waveAt;
+    while (head < inOrder.length && since >= startOf(head)) head++;
+    for (let k = tail; k < head; k++) {
+      const ride = inOrder[k];
+      const at = since - startOf(k);
+      ride.wave = at >= WAVE_LENGTH ? 0 : openness(at, WAVE_HELD, WAVE_OPENING, WAVE_CLOSING);
+      slide(ride);
+    }
+    // Every drawer is out for the same time, so they finish in the order they started and the live ones stay one unbroken run.
+    while (tail < head && since - startOf(tail) >= WAVE_LENGTH) tail++;
+    if (tail < inOrder.length) return;
+    waveAt = null;
+    for (const pool of pools) pool.next = clock + 0.7 + Math.random() * 2.6;
+  };
+
+  const tick = (worldGV: GyroVector, dt: number): void => {
     clock += dt;
+    aim.update(worldGV);
     for (const pool of pools) {
-      if (clock >= pool.next && pool.busy.length < AT_ONCE && pool.idle.length > 0) {
+      if (waveAt === null && clock >= pool.next && pool.busy.length < AT_ONCE && pool.idle.length > 0) {
         const [ride] = pool.idle.splice(Math.floor(Math.random() * pool.idle.length), 1);
         ride.started = clock;
         ride.held = 0.8 + Math.random() * 2.4;
@@ -233,16 +300,15 @@ export function buildCabinets(world: HyperWorld, at: GyroVector, yaw: number): C
         const ride = pool.busy[k];
         const since = clock - ride.started;
         const done = since >= OPENING + ride.held + CLOSING;
-        const out = done ? 0 : TRAVEL * openness(since, ride.held);
-        // A drawer pushed straight out in authored space climbs off its runners: its path is the cabinet's own straight line, mapped into the chart.
-        place(ride.chart, 0, ride.y, ride.z + out, shift).sub(ride.home);
-        for (const part of ride.parts) part.moveTo(shift.x, shift.y, shift.z);
+        ride.random = done ? 0 : openness(since, ride.held);
+        slide(ride);
         if (done) {
           pool.busy.splice(k, 1);
           pool.idle.push(ride);
         }
       }
     }
+    wave();
   };
 
   return { object: floor, tick };

@@ -19,6 +19,7 @@ export interface Settings {
   headBob: boolean;
   graphics: Graphics;
   showHelp: boolean;
+  sound: boolean;
   showDetails: boolean;
   showTests: boolean;
 }
@@ -33,6 +34,7 @@ export function defaults(): Settings {
     headBob: true,
     graphics: 'auto',
     showHelp: true,
+    sound: true,
     // Diagnostics, not content. Anyone who wants them knows where they are.
     showDetails: false,
     showTests: false,

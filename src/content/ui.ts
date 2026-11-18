@@ -62,6 +62,7 @@ export const UI = {
   ),
 
   showHelp: L('Show controls', 'Kontrolleri göster'),
+  sound: L('Sound', 'Ses'),
   showDetails: L('Show details', 'Ayrıntıları göster'),
   showTests: L('Show math self-tests', 'Matematik testlerini göster'),
 

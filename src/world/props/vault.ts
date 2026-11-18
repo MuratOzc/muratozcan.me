@@ -32,7 +32,16 @@ function faced(profile: Array<[number, number]>, segments: number, x: number, y:
   return pos(lathe(profile, segments).rotateX(Math.PI / 2), x, y, z);
 }
 
-export function safe(): { parts: Part[]; gilding: BufferGeometry } {
+export interface Safe {
+  parts: Part[];
+  gilding: BufferGeometry;
+  /** Authored about its own hub, so it can turn: stand it at `handleAt`. */
+  handle: Part;
+  handleAt: Vector3;
+  doorAt: Vector3;
+}
+
+export function safe(): Safe {
   const parts: Part[] = [];
 
   parts.push([pos(box(0.74, PLINTH, 0.66, 0.014), 0, PLINTH / 2, 0), CONCRETE]);
@@ -84,16 +93,15 @@ export function safe(): { parts: Part[]; gilding: BufferGeometry } {
   parts.push([pos(new BoxGeometry(0.007, 0.013, 0.006), DIAL_X, FIT_Y + 0.061, DOOR_FACE + 0.011), DIAL]);
 
   const handle: BufferGeometry[] = [
-    faced([[0.001, 0], [0.034, 0], [0.034, 0.008], [0.022, 0.016], [0.02, 0.04], [0.001, 0.04]], 16, HANDLE_X, FIT_Y, DOOR_FACE),
+    faced([[0.001, 0], [0.034, 0], [0.034, 0.008], [0.022, 0.016], [0.02, 0.04], [0.001, 0.04]], 16, 0, 0, 0),
   ];
   for (let i = 0; i < 3; i++) {
     const a = Math.PI / 2 + 0.26 + (i / 3) * Math.PI * 2;
-    const hub = new Vector3(HANDLE_X, FIT_Y, DOOR_FACE + 0.028);
-    const tip = new Vector3(HANDLE_X + Math.cos(a) * 0.076, FIT_Y + Math.sin(a) * 0.076, DOOR_FACE + 0.028);
+    const hub = new Vector3(0, 0, 0.028);
+    const tip = new Vector3(Math.cos(a) * 0.076, Math.sin(a) * 0.076, 0.028);
     handle.push(rod(hub, tip, 0.0075, 0.006, 8));
     handle.push(pos(new SphereGeometry(0.014, 8, 5), tip.x, tip.y, tip.z));
   }
-  parts.push([merge(handle), BRASS]);
 
   const frames: BufferGeometry[] = [];
   const fittings: BufferGeometry[] = [];
@@ -127,5 +135,11 @@ export function safe(): { parts: Part[]; gilding: BufferGeometry } {
   const gilding = intoRegion(new PlaneGeometry(0.44, 0.58, 2, 2), GILDING);
   gilding.translate(0, BODY_Y, DOOR_FACE + 0.004);
 
-  return { parts, gilding };
+  return {
+    parts,
+    gilding,
+    handle: [merge(handle), BRASS],
+    handleAt: new Vector3(HANDLE_X, FIT_Y, DOOR_FACE),
+    doorAt: new Vector3(0, BODY_Y, DOOR_FACE),
+  };
 }

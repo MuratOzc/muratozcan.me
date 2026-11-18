@@ -185,6 +185,7 @@ export const AMBER = { on: '#ffc655', off: '#4d3913' };
 export const BLUE = { on: '#7fd2ff', off: '#1b3b52' };
 
 const CELL = 4;
+const BUSY = 0.72;
 const COLUMNS = 16;
 const ROWS = 4;
 
@@ -218,20 +219,21 @@ export class Lamps {
     this.quads.push(quad);
   }
 
-  repaint(t: number): void {
+  repaint(t: number, activity = t, load = 0): void {
     this.lamps.forEach((lamp, slot) => {
       let colour: string;
       if (lamp.kind === 'steady') {
         colour = lamp.colour;
       } else if (lamp.kind === 'beat') {
-        colour = (t / lamp.period + lamp.seed) % 1 < 0.5 ? lamp.on : lamp.off;
+        colour = (activity / lamp.period + lamp.seed) % 1 < 0.5 ? lamp.on : lamp.off;
       } else if (lamp.kind === 'breathe') {
         const k = 0.3 + 0.7 * (0.5 - 0.5 * Math.cos((t / lamp.period) * Math.PI * 2));
         colour = `rgb(${lamp.rgb.map((c) => Math.round(c * k)).join(',')})`;
       } else {
-        const a = Math.sin(t * lamp.rate + lamp.seed * 3.1);
-        const b = Math.sin(t * lamp.rate * 1.57 + lamp.seed * 1.7);
-        colour = (a + b) * 0.5 > 1 - 2 * lamp.busy ? lamp.on : lamp.off;
+        const a = Math.sin(activity * lamp.rate + lamp.seed * 3.1);
+        const b = Math.sin(activity * lamp.rate * 1.57 + lamp.seed * 1.7);
+        const busy = lamp.busy + (BUSY - lamp.busy) * load;
+        colour = (a + b) * 0.5 > 1 - 2 * busy ? lamp.on : lamp.off;
       }
       this.ctx.fillStyle = colour;
       this.ctx.fillRect((slot % COLUMNS) * CELL, Math.floor(slot / COLUMNS) * CELL, CELL, CELL);

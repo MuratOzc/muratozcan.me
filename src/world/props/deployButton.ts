@@ -31,6 +31,7 @@ import {
   type HyperWorld,
 } from '../../engine';
 import { L, onLangChange, t, upper } from '../../content/i18n';
+import { sfx } from '../../audio';
 import { isTouch } from '../../device';
 import { across, box, grained, lathe, merge, pos, roundedRect, trace, type Part, type Point } from '../geometry';
 import { units } from '../placement';
@@ -89,14 +90,55 @@ const T_PRESS = 0.38;
 const T_BUILD = 0.62;
 const T_TEST = 1.9;
 const T_PROD = 3.4;
-const T_FAIL = 5.4;
-const T_DARK = 9.0;
-const T_CLOSE = 9.3;
+const T_VERDICT = 5.4;
 const BEACON_ON = 0.58;
 const BEACON_OFF = 8.6;
 const SPIN_UP = 0.7;
 const SPIN_DOWN = 1.6;
-const T_END = BEACON_OFF + SPIN_DOWN + 0.1;
+
+interface Run {
+  fails: boolean;
+  dark: number;
+  close: number;
+  end: number;
+}
+const FAILED: Run = { fails: true, dark: 9.0, close: 9.3, end: BEACON_OFF + SPIN_DOWN + 0.1 };
+const SHIPPED: Run = { fails: false, dark: 6.6, close: 6.9, end: 7.8 };
+
+const MONTHS = [
+  L('January', 'Ocak'),
+  L('February', 'Şubat'),
+  L('March', 'Mart'),
+  L('April', 'Nisan'),
+  L('May', 'Mayıs'),
+  L('June', 'Haziran'),
+  L('July', 'Temmuz'),
+  L('August', 'Ağustos'),
+  L('September', 'Eylül'),
+  L('October', 'Ekim'),
+  L('November', 'Kasım'),
+  L('December', 'Aralık'),
+];
+const WEEKDAYS = [
+  L('Sunday', 'Pazar'),
+  L('Monday', 'Pazartesi'),
+  L('Tuesday', 'Salı'),
+  L('Wednesday', 'Çarşamba'),
+  L('Thursday', 'Perşembe'),
+  L('Friday', 'Cuma'),
+  L('Saturday', 'Cumartesi'),
+];
+const FRIDAY = 5;
+
+const FORCED_DAY = (() => {
+  const raw = new URLSearchParams(location.search).get('day');
+  const day = raw === null || raw.trim() === '' ? NaN : Number(raw);
+  return Number.isInteger(day) && day >= 0 && day <= 6 ? day : null;
+})();
+
+function weekday(now: Date): number {
+  return FORCED_DAY ?? now.getDay();
+}
 // A whole number of turns over the run, so the reflector parks where it started.
 const BEACON_RATE = (2 * Math.PI * 12) / (BEACON_OFF - BEACON_ON - SPIN_UP / 2 + SPIN_DOWN / 2);
 
@@ -384,7 +426,8 @@ function paintPage(ctx: CanvasRenderingContext2D, w: number, h: number): void {
 
   ctx.fillStyle = '#1d2228';
   ctx.letterSpacing = '8px';
-  const month = upper(t(L('November', 'Kasım')));
+  const now = new Date();
+  const month = upper(t(MONTHS[now.getMonth()]));
   fitLine(ctx, month, w - 90, 46);
   ctx.fillText(month, w / 2 + 4, 52);
 
@@ -393,15 +436,16 @@ function paintPage(ctx: CanvasRenderingContext2D, w: number, h: number): void {
 
   ctx.fillStyle = '#1d2228';
   ctx.letterSpacing = '0px';
-  ctx.font = `800 262px ${SANS}`;
-  ctx.fillText('13', w / 2, 236);
+  const date = String(now.getDate());
+  fitLine(ctx, date, w - 60, 262, 800);
+  ctx.fillText(date, w / 2, 236);
 
   const BAND = 118;
   ctx.fillStyle = '#d5372c';
   ctx.fillRect(0, h - BAND, w, BAND);
   ctx.fillStyle = '#fffaf0';
   ctx.letterSpacing = '6px';
-  const day = upper(t(L('Friday', 'Cuma')));
+  const day = upper(t(WEEKDAYS[weekday(now)]));
   fitLine(ctx, day, w - 70, 84, 800);
   ctx.fillText(day, w / 2 + 3, h - BAND / 2 + 4);
 }
@@ -1155,16 +1199,16 @@ function plunger(): Part[] {
   ];
 }
 
-function guardOpen(time: number): number {
+function guardOpen(time: number, close: number): number {
   if (time < 0) return 0;
   if (time < T_GUARD) {
     const u = time / T_GUARD - 1;
     return 1 + 2 * u * u * u + u * u;
   }
-  if (time < T_CLOSE) return 1;
-  const fall = (time - T_CLOSE) / 0.36;
+  if (time < close) return 1;
+  const fall = (time - close) / 0.36;
   if (fall < 1) return 1 - fall * fall;
-  const since = time - T_CLOSE - 0.36;
+  const since = time - close - 0.36;
   return 0.07 * Math.abs(Math.sin(since * 15)) * Math.exp(-8 * since);
 }
 
@@ -1213,27 +1257,28 @@ function heartbeat(clock: number): number {
   return 0.1 + 0.9 * Math.max(lub, dub);
 }
 
-function stage(time: number, from: number, until: number, verdict: ToneName): [ToneName, number] {
-  if (time < from || time >= T_DARK) return ['amber', 0];
+function stage(time: number, from: number, until: number, verdict: ToneName, dark: number): [ToneName, number] {
+  if (time < from || time >= dark) return ['amber', 0];
   if (time < until) return ['amber', 0.35 + 0.65 * (0.5 - 0.5 * Math.cos((time - from) * 11))];
   return [verdict, 1];
 }
 
-function lampsAt(time: number | null, clock: number): Lamps {
+function lampsAt(time: number | null, clock: number, run: Run): Lamps {
   if (time === null) {
     return { build: ['amber', 0], test: ['amber', 0], prod: ['amber', 0], ready: heartbeat(clock), fault: 0, beacon: 0 };
   }
-  const failed = time >= T_FAIL && time < T_DARK;
-  const since = time - T_FAIL;
-  const prod = stage(time, T_PROD, T_FAIL, 'red');
+  const failed = run.fails && time >= T_VERDICT && time < run.dark;
+  const since = time - T_VERDICT;
+  const prod = stage(time, T_PROD, T_VERDICT, run.fails ? 'red' : 'green', run.dark);
   if (failed && since < 1.2) prod[1] = Math.floor(since * 5) % 2 === 0 ? 1 : 0.15;
+  const resumed = clamp01((time - run.dark) / 1.2);
   return {
-    build: stage(time, T_BUILD, T_TEST, 'green'),
-    test: stage(time, T_TEST, T_PROD, 'green'),
+    build: stage(time, T_BUILD, T_TEST, 'green', run.dark),
+    test: stage(time, T_TEST, T_PROD, 'green', run.dark),
     prod,
-    ready: time < T_FAIL ? 1 : time < T_DARK ? 0 : clamp01((time - T_DARK) / 1.2) * heartbeat(clock),
+    ready: run.fails ? (time < T_VERDICT ? 1 : resumed * heartbeat(clock)) : 1 + (heartbeat(clock) - 1) * resumed,
     fault: failed ? (Math.floor(since * 6) % 2 === 0 ? 1 : 0) : 0,
-    beacon: time > BEACON_ON && time < BEACON_OFF + SPIN_DOWN * 0.55 ? 1 : 0,
+    beacon: run.fails && time > BEACON_ON && time < BEACON_OFF + SPIN_DOWN * 0.55 ? 1 : 0,
   };
 }
 
@@ -1354,13 +1399,25 @@ export function buildDeployButton(world: HyperWorld, at: GyroVector, yaw: number
 
   let clock = 0;
   let pressedAt: number | null = null;
+  let plan = SHIPPED;
   let lift = 0;
 
   addEventListener('keydown', (e) => {
     if (e.code !== 'KeyE' || e.repeat || !hovered || pressedAt !== null) return;
     pressedAt = clock;
+    plan = weekday(new Date()) === FRIDAY ? FAILED : SHIPPED;
     hovered = false;
     repaintPrompt();
+
+    // Scheduled here, not from the tick: the tick stops while the console is out of view.
+    sfx.clunk(T_PRESS);
+    for (const lit of [T_BUILD, T_TEST, T_PROD]) sfx.click(lit);
+    if (plan.fails) {
+      sfx.buzzer(T_VERDICT);
+      sfx.alarm(5, T_VERDICT + 0.65);
+    } else {
+      sfx.chime(T_VERDICT);
+    }
   });
 
   const poincare = new Vector3();
@@ -1370,7 +1427,7 @@ export function buildDeployButton(world: HyperWorld, at: GyroVector, yaw: number
 
   const tick = (worldGV: GyroVector, dt: number) => {
     clock += dt;
-    if (pressedAt !== null && clock - pressedAt >= T_END) pressedAt = null;
+    if (pressedAt !== null && clock - pressedAt >= plan.end) pressedAt = null;
     const time = pressedAt === null ? null : clock - pressedAt;
     if (!object.inView && !hovered) return;
 
@@ -1395,13 +1452,13 @@ export function buildDeployButton(world: HyperWorld, at: GyroVector, yaw: number
 
     lift += ((hovered ? 1 : 0) - lift) * Math.min(1, dt * 10);
     const run = time ?? -1;
-    guardNode.rotation.x = -GUARD_OPEN * Math.max(guardOpen(run), 0.11 * lift);
+    guardNode.rotation.x = -GUARD_OPEN * Math.max(guardOpen(run, plan.close), 0.11 * lift);
     plungerNode.position.y = PLATE_T + plungerDrop(run);
-    rotorNode.rotation.y = beaconTurn(run);
+    rotorNode.rotation.y = plan.fails ? beaconTurn(run) : 0;
     secondNode.rotation.z = (-secondsShown(clock) / 60) * Math.PI * 2;
-    lampTex.show(lampsAt(time, clock));
+    lampTex.show(lampsAt(time, clock, plan));
   };
 
-  lampTex.show(lampsAt(null, 0));
+  lampTex.show(lampsAt(null, 0, SHIPPED));
   return { object, tick };
 }

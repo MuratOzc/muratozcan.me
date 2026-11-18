@@ -1,6 +1,9 @@
 import {
+  BufferAttribute,
+  BufferGeometry,
   ConeGeometry,
   CylinderGeometry,
+  Euler,
   ExtrudeGeometry,
   Group,
   Path,
@@ -9,9 +12,10 @@ import {
   SphereGeometry,
   TorusGeometry,
   Vector3,
-  type BufferGeometry,
+  type Mesh,
   type Texture,
 } from 'three';
+import { sfx } from '../../audio';
 import { aimed, box, lathe, merge, moved, pos, rod, type Part } from '../geometry';
 import {
   GyroVector,
@@ -22,6 +26,7 @@ import {
 } from '../../engine';
 import { L, t, type Localized } from '../../content/i18n';
 import { STATIONS } from '../../content/stations';
+import { Aim } from '../interact';
 import { EXHIBIT_LATERAL, SENTRIES } from '../layout';
 import { ARCH_AT, PORTRAIT_AT } from '../skeleton';
 import { localizedCanvasTexture } from '../text';
@@ -957,6 +962,39 @@ function globeStand(): Part[] {
   return moved(parts, GLOBE_AT.x, 0, GLOBE_AT.z);
 }
 
+const SHOVE = 5;
+const SPIN_MAX = 14;
+const SPIN_DRAG = 0.8;
+const SPIN_BRAKE = 0.35;
+
+const TRAIL_STEP = 0.25;
+const TRAIL_QUADS = 240;
+const TRAIL_BREAK = 3;
+const TRAIL_R = GLOBE_R + 0.004;
+const TRAIL_HALF_W = 0.004;
+const TRAIL: HyperMaterialOptions = { color: 0xe8503a, ambient: 0.88, castShadow: false, receiveShadow: false };
+
+// Unused quads are parked collapsed at the six axis points, so the bounds taken at build already cover the whole globe.
+function trailGeometry(): BufferGeometry {
+  const position = new Float32Array(TRAIL_QUADS * 12);
+  const normal = new Float32Array(TRAIL_QUADS * 12);
+  const index = new Uint16Array(TRAIL_QUADS * 6);
+  for (let q = 0; q < TRAIL_QUADS; q++) {
+    const axis = q % 3;
+    const sign = q % 6 < 3 ? 1 : -1;
+    for (let v = 0; v < 4; v++) {
+      position[(q * 4 + v) * 3 + axis] = sign * TRAIL_R;
+      normal[(q * 4 + v) * 3 + axis] = sign;
+    }
+    index.set([q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3], q * 6);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(position, 3));
+  g.setAttribute('normal', new BufferAttribute(normal, 3));
+  g.setIndex(new BufferAttribute(index, 1));
+  return g;
+}
+
 export interface WorldModelHandle {
   object: HyperObject;
   /** Moves the you-are-here pin. Called every frame by the station tickers. */
@@ -1009,9 +1047,12 @@ export function buildWorldModel(
 
   // The pin hangs off this node: it reads map coordinates and inherits the aim.
   const mapNode = new Group();
-  mapNode.position.copy(GLOBE_AT);
-  mapNode.rotation.set(MAP_ROTATION.x, MAP_ROTATION.y, MAP_ROTATION.z);
-  object.add(mapNode);
+  mapNode.quaternion
+    .setFromEuler(new Euler(MAP_ROTATION.x, MAP_ROTATION.y, MAP_ROTATION.z))
+    .premultiply(cradleNode.quaternion.clone().invert());
+  const spinNode = new Group();
+  spinNode.add(mapNode);
+  cradleNode.add(spinNode);
 
   object.addGeometry(
     world.shared,
@@ -1035,26 +1076,120 @@ export function buildWorldModel(
     pinNode,
   );
 
+  const trailNode = new Group();
+  mapNode.add(trailNode);
+  object.addLiveGeometry(world.shared, trailGeometry(), TRAIL, trailNode);
+  // addLiveGeometry draws a merged copy; that copy is the one to rewrite.
+  const trail = (trailNode.children.find((c) => (c as Mesh).isMesh) as Mesh).geometry;
+  const trailPosition = trail.attributes.position as BufferAttribute;
+  const trailNormal = trail.attributes.normal as BufferAttribute;
+  const trailTint = trail.attributes.aTint as BufferAttribute;
+
+  const stepCos = Math.cos(TRAIL_STEP * HM.unitScale);
+  const breakCos = Math.cos(TRAIL_BREAK * HM.unitScale);
+  const from = new Vector3();
+  const before = new Vector3();
+  const side = new Vector3();
+  const mitre = new Vector3();
+  const chord = new Vector3();
+  let started = false;
+  let slot = 0;
+  let lastSlot = -1;
+  let shaded = -1;
+
+  const edge = (quad: number, corner: number, p: Vector3, across: Vector3, sign: number): void => {
+    const i = quad * 4 + corner;
+    trailPosition.setXYZ(
+      i,
+      p.x * TRAIL_R + across.x * sign * TRAIL_HALF_W,
+      p.y * TRAIL_R + across.y * sign * TRAIL_HALF_W,
+      p.z * TRAIL_R + across.z * sign * TRAIL_HALF_W,
+    );
+    trailNormal.setXYZ(i, p.x, p.y, p.z);
+  };
+
+  const extend = (g: Vector3): void => {
+    if (!started || from.dot(g) < breakCos) {
+      from.copy(g);
+      started = true;
+      lastSlot = -1;
+      return;
+    }
+    side.crossVectors(from, g).normalize();
+    mitre.copy(side);
+    if (lastSlot >= 0) {
+      mitre.crossVectors(from, chord.subVectors(g, before));
+      if (mitre.lengthSq() > 1e-10) mitre.normalize();
+      else mitre.copy(side);
+      edge(lastSlot, 2, from, mitre, -1);
+      edge(lastSlot, 3, from, mitre, 1);
+    }
+    // Corner order is right, left, left, right: the winding that faces out of the globe.
+    edge(slot, 0, from, mitre, 1);
+    edge(slot, 1, from, mitre, -1);
+    edge(slot, 2, g, side, -1);
+    edge(slot, 3, g, side, 1);
+    trailPosition.needsUpdate = true;
+    trailNormal.needsUpdate = true;
+
+    lastSlot = slot;
+    slot = (slot + 1) % TRAIL_QUADS;
+    before.copy(from);
+    from.copy(g);
+  };
+
+  const aim = new Aim(world, object);
+  let spin = 0;
+  aim.add({
+    name: L('Spin the globe', 'Küreyi çevir'),
+    at: GLOBE_AT.clone(),
+    size: GLOBE_R,
+    use: () => {
+      spin = Math.min(SPIN_MAX, spin + SHOVE);
+      sfx.whir(Math.log(1 + (spin * SPIN_DRAG) / SPIN_BRAKE) / SPIN_DRAG);
+    },
+  });
+
   const up = new Vector3(0, 1, 0);
   const viewer = new Vector3();
+  const ground = new Vector3();
   let clock = 0;
 
-  const tick = (worldGV: GyroVector, dt: number) => {
-    clock += dt;
+  const locate = (worldGV: GyroVector): void => {
     // Where the viewer is, in the world's own chart: invert the world
     // transform and read the point. Chart radius -> geodesic distance,
     // chart direction -> bearing; both drop straight onto the map sphere.
     worldGV.inverse().point(viewer);
     const dist = 2 * Math.atan(viewer.length());
     const bearing = Math.atan2(viewer.x, -viewer.z);
-    const g = groundVec(bearing, dist);
+    ground.set(Math.sin(dist) * Math.sin(bearing), Math.cos(dist), -Math.sin(dist) * Math.cos(bearing));
 
     const bob = 1 + Math.sin(clock * 2.4) * 0.012;
-    pinNode.position.copy(g).multiplyScalar(GLOBE_R * bob);
-    pinNode.quaternion.setFromUnitVectors(up, g);
+    pinNode.position.copy(ground).multiplyScalar(GLOBE_R * bob);
+    pinNode.quaternion.setFromUnitVectors(up, ground);
   };
 
-  tick(new GyroVector(), 0);
+  const tick = (worldGV: GyroVector, dt: number) => {
+    clock += dt;
+    locate(worldGV);
+
+    if (!started || from.dot(ground) < stepCos) extend(ground);
+    // The crevice bake multiplies the tint in place when it lands, and it was taken from the parked quads.
+    if (trailTint.version !== shaded) {
+      (trailTint.array as Float32Array).fill(1);
+      trailTint.needsUpdate = true;
+      shaded = trailTint.version;
+    }
+
+    if (spin > 0) {
+      spinNode.rotation.y = (spinNode.rotation.y + spin * dt) % (Math.PI * 2);
+      spin = Math.max(0, spin * Math.exp(-SPIN_DRAG * dt) - SPIN_BRAKE * dt);
+    }
+
+    aim.update(worldGV);
+  };
+
+  locate(new GyroVector());
 
   world.add(object);
   return { object, tick };

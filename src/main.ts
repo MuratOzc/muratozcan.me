@@ -23,7 +23,9 @@ import {
 import { onLangChange, t } from './content/i18n';
 import { UI } from './content/ui';
 import { ProximityPanel } from './world/panel';
+import { setMuted } from './audio';
 import { buildLandmarks } from './world/landmarks';
+import { CLEAR_DAY, DAY } from './world/sky';
 import { buildSkeleton } from './world/skeleton';
 import { buildStations } from './world/stations';
 import { makeTextTexture } from './world/text';
@@ -75,21 +77,10 @@ const world = new HyperWorld({
   canvas,
   curvature: 1,
   unitScale: UNIT_SCALE,
-  background: 0xaebfd0,
+  background: CLEAR_DAY,
   fov: settings().fov,
 });
-world.setAtmosphere({
-  sunDirection: [-0.72, 0.93, 0.3],
-  sun: [2.05, 1.86, 1.5],
-  skyLight: [0.7, 0.84, 1.04],
-  groundLight: [0.74, 0.72, 0.58],
-  horizon: [0.74, 0.85, 0.95],
-  zenith: [0.3, 0.54, 0.86],
-  sunGlow: [1.0, 0.86, 0.62],
-  fogDensity: 0.9,
-  haze: 0.3,
-  vignette: 0.28,
-});
+world.setAtmosphere(DAY);
 onQualityChange((quality) => world.setQuality(quality));
 
 const pois: Poi[] = [];
@@ -307,6 +298,7 @@ async function boot(): Promise<void> {
     controls.sensitivityScale = s.sensitivity;
     controls.invertLook = s.invertLook;
     controls.headBob = s.headBob ? 0.018 : 0;
+    setMuted(!s.sound);
 
     if (s.graphics !== graphics) {
       graphics = s.graphics;

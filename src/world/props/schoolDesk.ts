@@ -12,6 +12,7 @@ import {
   TubeGeometry,
   Vector3,
   type BufferGeometry,
+  type Texture,
 } from 'three';
 import {
   RoundedBoxGeometry,
@@ -33,6 +34,9 @@ import {
   type HyperMaterialOptions,
   type HyperWorld,
 } from '../../engine';
+import { sfx } from '../../audio';
+import { L } from '../../content/i18n';
+import { Aim } from '../interact';
 import { localizedCanvasTexture, shrinkToFit } from '../text';
 import { pencil } from './stationery';
 
@@ -147,21 +151,105 @@ function chalkboardTexture() {
   });
 }
 
-const LISTING = ['10 FOR I=1 TO 9', '20 PRINT I*I', '30 NEXT I', 'RUN', ' 1', ' 4', ' 9'];
+interface Program {
+  listing: string[];
+  output: number[];
+}
 
-function screenTexture() {
-  return localizedCanvasTexture(512, 400, (ctx, w, h) => {
+function fibonacci(count: number): number[] {
+  const out: number[] = [];
+  let a = 0;
+  let b = 1;
+  for (let i = 0; i < count; i++) {
+    out.push(b);
+    [a, b] = [b, a + b];
+  }
+  return out;
+}
+
+// A line longer than 17 characters runs off the screen in the wider monospace faces.
+const PROGRAMS: Program[] = [
+  {
+    listing: ['10 FOR I=1 TO 9', '20 PRINT I*I', '30 NEXT I'],
+    output: Array.from({ length: 9 }, (_, i) => (i + 1) * (i + 1)),
+  },
+  {
+    listing: ['10 A=0:B=1', '20 FOR I=1 TO 11', '30 PRINT B', '40 C=A+B:A=B:B=C', '50 NEXT I'],
+    output: fibonacci(11),
+  },
+  {
+    listing: ['10 N=1', '20 FOR I=0 TO 9', '30 PRINT N:N=N*2', '40 NEXT I'],
+    output: Array.from({ length: 10 }, (_, i) => 2 ** i),
+  },
+];
+
+const printed = (n: number): string => ` ${n}`;
+
+const SCREEN_W = 512;
+const SCREEN_H = 400;
+const ROWS = 8;
+const ROW_PITCH = 46;
+
+const KEY_EVERY = 0.055;
+const ENTER_AFTER = 0.2;
+const THINK = 0.4;
+const PRINT_EVERY = 0.22;
+const BLINK = 0.5;
+
+interface Terminal {
+  texture: Texture;
+  clear(): void;
+  type(text: string): void;
+  feed(): void;
+  blink(): void;
+  refresh(): void;
+}
+
+function terminal(): Terminal {
+  let rows = [...PROGRAMS[0].listing, 'RUN', ...PROGRAMS[0].output.slice(0, 3).map(printed), ''];
+  let cursor = true;
+  let pen: CanvasRenderingContext2D | null = null;
+
+  const paint = (ctx: CanvasRenderingContext2D, w: number, h: number): void => {
+    pen = ctx;
     ctx.fillStyle = '#0d1a10';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#7be08a';
     ctx.font = '600 42px ui-monospace, Consolas, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    LISTING.forEach((line, i) => ctx.fillText(line, 34, 20 + i * 46));
-    ctx.fillRect(34, 20 + LISTING.length * 46, 24, 38);
+    rows.forEach((line, i) => ctx.fillText(line, 34, 20 + i * ROW_PITCH));
+    if (cursor) {
+      const last = rows.length - 1;
+      ctx.fillRect(34 + ctx.measureText(rows[last]).width, 20 + last * ROW_PITCH, 24, 38);
+    }
     ctx.fillStyle = '#0a130baa';
     for (let y = 0; y < h; y += 6) ctx.fillRect(0, y, w, 2);
-  });
+  };
+
+  const texture = localizedCanvasTexture(SCREEN_W, SCREEN_H, paint);
+  return {
+    texture,
+    clear() {
+      rows = [''];
+      cursor = true;
+    },
+    type(text) {
+      rows[rows.length - 1] += text;
+    },
+    feed() {
+      rows.push('');
+      if (rows.length > ROWS) rows.shift();
+    },
+    blink() {
+      cursor = !cursor;
+    },
+    refresh() {
+      if (!pen) return;
+      paint(pen, SCREEN_W, SCREEN_H);
+      texture.needsUpdate = true;
+    },
+  };
 }
 
 
@@ -517,11 +605,16 @@ function board(width: number, height: number, centreY: number): Part[] {
   return parts;
 }
 
+export interface SchoolDeskResult {
+  object: HyperObject;
+  tick: (worldGV: GyroVector, dt: number) => void;
+}
+
 export function buildSchoolDesk(
   world: HyperWorld,
   at: GyroVector,
   yaw: number,
-): HyperObject {
+): SchoolDeskResult {
   const object = new HyperObject(at);
   object.rotation.y = yaw;
   const put = (parts: Part[], node: Group): void => {
@@ -553,22 +646,24 @@ export function buildSchoolDesk(
     boardNode,
   );
 
+  const DESK_TURN = 0.12;
   const deskNode = new Group();
   deskNode.position.set(1.5, 0, 0.1);
-  deskNode.rotation.y = 0.12;
+  deskNode.rotation.y = DESK_TURN;
   object.add(deskNode);
 
   put(bench(), deskNode);
 
   const PC_X = -0.28;
   const pc = computer();
+  const term = terminal();
   put(moved(pc.parts, PC_X, DESK_TOP, -0.095), deskNode);
   pc.screen.translate(PC_X, DESK_TOP, -0.095);
   object.addGeometry(
     world.shared,
     pc.screen,
     {
-      map: screenTexture(),
+      map: term.texture,
       color: 0xffffff,
       ambient: 0.98,
       castShadow: false,
@@ -601,5 +696,114 @@ export function buildSchoolDesk(
   put(moved(bag, -(BENCH_W / 2 + 0.11), 0, 0.42), deskNode);
 
   world.add(object);
-  return object;
+
+  const screenNode = new Group();
+  screenNode.position.set(PC_X, DESK_TOP + 0.32, 0.079);
+  deskNode.add(screenNode);
+
+  const script: Array<[at: number, run: () => void]> = [];
+  let next = 0;
+  let clock = 0;
+  let runs = 0;
+  let running = false;
+  let dirty = false;
+  let blink = 0;
+
+  const typed = (line: string, from: number): number => {
+    let at = from;
+    for (const ch of line) {
+      at += KEY_EVERY;
+      script.push([
+        at,
+        () => {
+          term.type(ch);
+          sfx.key();
+        },
+      ]);
+    }
+    at += ENTER_AFTER;
+    script.push([
+      at,
+      () => {
+        term.feed();
+        sfx.key();
+      },
+    ]);
+    return at;
+  };
+
+  const run = (): void => {
+    const program = PROGRAMS[runs % PROGRAMS.length];
+    script.length = 0;
+    next = 0;
+    clock = 0;
+
+    let at = 0.25;
+    // The first program is the one already in memory when the visitor arrives.
+    if (runs > 0) for (const line of program.listing) at = typed(line, at);
+    at = typed('RUN', at) + THINK;
+    for (const n of program.output) {
+      script.push([
+        at,
+        () => {
+          term.type(printed(n));
+          term.feed();
+        },
+      ]);
+      at += PRINT_EVERY;
+    }
+    script.push([
+      at + 0.1,
+      () => {
+        term.feed();
+        term.type('READY');
+        term.feed();
+        sfx.beep();
+        running = false;
+        blink = 0;
+      },
+    ]);
+
+    term.clear();
+    sfx.key();
+    runs++;
+    running = true;
+    dirty = true;
+  };
+
+  const aim = new Aim(world, object);
+  aim.add({
+    name: L('RUN', 'RUN'),
+    at: screenNode,
+    size: 0.24,
+    front: new Vector3(Math.sin(DESK_TURN), 0, Math.cos(DESK_TURN)),
+    enabled: () => !running,
+    use: run,
+  });
+
+  const tick = (worldGV: GyroVector, dt: number): void => {
+    aim.update(worldGV);
+
+    if (running) {
+      clock += dt;
+      while (running && next < script.length && script[next][0] <= clock) {
+        script[next++][1]();
+        dirty = true;
+      }
+    } else if (runs > 0 && object.inView) {
+      blink += dt;
+      if (blink >= BLINK) {
+        blink = 0;
+        term.blink();
+        dirty = true;
+      }
+    }
+
+    if (dirty && object.inView) {
+      term.refresh();
+      dirty = false;
+    }
+  };
+
+  return { object, tick };
 }

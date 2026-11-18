@@ -72,6 +72,7 @@ function groups(): Group[] {
           set: (v) => setLang(v as Lang),
         },
         toggleRow(UI.showHelp, 'showHelp'),
+        toggleRow(UI.sound, 'sound'),
       ],
     },
     {
